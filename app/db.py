@@ -470,8 +470,8 @@ def get_matches_needing_reminder(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         SELECT * FROM matches
         WHERE status IN ('SCHEDULED', 'TIMED')
           AND reminder_sent = 0
-          AND kickoff_utc BETWEEN datetime('now', '+50 minutes')
-                              AND datetime('now', '+70 minutes')
+          AND datetime(kickoff_utc) BETWEEN datetime('now', '+50 minutes')
+                                      AND datetime('now', '+70 minutes')
         ORDER BY kickoff_utc ASC
     """).fetchall()
 
@@ -501,7 +501,7 @@ def get_dates_needing_wrap(conn: sqlite3.Connection) -> list[str]:
         FROM matches
         GROUP BY date(kickoff_utc)
         HAVING COUNT(*) = SUM(scored)
-           AND MAX(kickoff_utc) < datetime('now')
+           AND MAX(datetime(kickoff_utc)) < datetime('now')
            AND date(kickoff_utc) NOT IN (SELECT match_date FROM daily_wrap_sent)
         ORDER BY match_date ASC
     """).fetchall()
@@ -543,7 +543,7 @@ def get_stages_needing_phase_wrap(conn: sqlite3.Connection) -> list[str]:
         FROM matches
         GROUP BY stage
         HAVING COUNT(*) = SUM(scored)
-           AND MAX(kickoff_utc) < datetime('now')
+           AND MAX(datetime(kickoff_utc)) < datetime('now')
            AND stage NOT IN (SELECT stage FROM phase_wrap_sent)
         ORDER BY MIN(kickoff_utc) ASC
     """).fetchall()
