@@ -1,0 +1,341 @@
+from app import db
+from app.flags import FLAGS, flag
+from app.football import is_kickoff_passed
+from app.scoring import (
+    TOURNAMENT_PICK_POINTS, SEMI_PICK_POINTS,
+    GROUP_GOALS_NEAR_RANGE, GROUP_GOALS_WIN_POINTS, GROUP_GOALS_NEAR_POINTS,
+    ZEBRA_POINTS, ZEBRA_WILDCARD_MULTIPLIER,
+    ZEBRA_BOLD, ZEBRA_WILDCARD,
+)
+
+CALLBACK_ID = "submit_tournament_picks"
+WINNER_ACTION = "pick_winner"
+SCORER_ACTION = "pick_scorer"
+ZEBRA_ACTION = "pick_zebra"
+SEMI_ACTIONS = ["pick_semi1", "pick_semi2", "pick_semi3", "pick_semi4"]
+GOALS_ACTION = "pick_group_goals"
+
+WC_TEAMS = sorted(FLAGS.keys())
+
+_SCORING_RUNDOWN = (
+    "*:soccer: Match Predictions*\n"
+    "  :dart: Exact score → *9 pts*\n"
+    "  :white_check_mark: Correct result → *3 pts*\n"
+    "  :zap: Upset bonus → *+2 pts*\n"
+    "  Stage multipliers: ×1.5 (R32/R16) · ×2 (QF) · ×2.5 (SF) · ×3 (Final)\n"
+    "\n"
+    f"*:trophy: Tournament Picks* _({TOURNAMENT_PICK_POINTS} pts each if correct)_\n"
+    "  :first_place_medal: World Cup Winner\n"
+    "  :athletic_shoe: Golden Boot (top scorer)\n"
+    "\n"
+    f"*:four: Semi-finalists* _(pick all 4 — {SEMI_PICK_POINTS} pts per correct team, {SEMI_PICK_POINTS * 4} pts max)_\n"
+    "\n"
+    f"*:goal_net: Group Stage Goals* _(guess total goals across all 72 group matches)_\n"
+    f"  Closest guess → *{GROUP_GOALS_WIN_POINTS} pts* · "
+    f"Within ±{GROUP_GOALS_NEAR_RANGE} → *{GROUP_GOALS_NEAR_POINTS} pts*\n"
+    "\n"
+    "*:zebra_face: Zebra Pick* _(pick an underdog — points if they go far!)_\n"
+    f"  R32 → *{ZEBRA_POINTS['LAST_32']} pts* · "
+    f"R16 → *{ZEBRA_POINTS['LAST_16']} pts* · "
+    f"QF → *{ZEBRA_POINTS['QUARTER_FINALS']} pts*\n"
+    f"  SF → *{ZEBRA_POINTS['SEMI_FINALS']} pts* · "
+    f"Final → *{ZEBRA_POINTS['FINAL']} pts* · "
+    f"Winner → *{ZEBRA_POINTS['WINNER']} pts*\n"
+    f"  :black_joker: Wildcard tier = *×{ZEBRA_WILDCARD_MULTIPLIER}* all of the above"
+)
+
+
+def open_picks_modal(client, trigger_id: str, slack_user_id: str):
+    with db.db() as conn:
+        if not db.is_enrolled(conn, slack_user_id):
+            client.chat_postEphemeral(
+                channel=slack_user_id,
+                user=slack_user_id,
+                text=":wave: You need to join the league first — use `/register` to sign up!",
+            )
+            return
+
+        locked = _picks_locked(conn)
+        existing = db.get_tournament_pick(conn, slack_user_id)
+
+    if locked and not existing:
+        client.chat_postEphemeral(
+            channel=slack_user_id,
+            user=slack_user_id,
+            text=":lock: Tournament picks are locked — Matchday 2 has already begun.",
+        )
+        return
+
+    if locked and existing:
+        semis = [existing[f"semi{i}"] for i in range(1, 5) if existing[f"semi{i}"]]
+        semi_txt = ""
+        if semis:
+            semi_txt = "\n  :four: Semis: " + "  ·  ".join(f"*{flag(t)} {t}*" for t in semis)
+        zebra_txt = ""
+        if existing["zebra"]:
+            tier_label = ":black_joker: Wildcard" if existing["zebra_tier"] == "WILDCARD" else "⭐ Bold"
+            zebra_txt = f"\n  :zebra_face: Zebra: *{flag(existing['zebra'])} {existing['zebra']}* ({tier_label})"
+        goals_txt = ""
+        if existing["group_goals_guess"] is not None:
+            goals_txt = f"\n  :goal_net: Group goals guess: *{existing['group_goals_guess']}*"
+        client.chat_postEphemeral(
+            channel=slack_user_id,
+            user=slack_user_id,
+            text=(
+                f":lock: Your picks are locked in!\n"
+                f"  :trophy: Winner: *{flag(existing['winner'])} {existing['winner']}*\n"
+                f"  :athletic_shoe: Golden Boot: *{existing['top_scorer']}*"
+                f"{semi_txt}{zebra_txt}{goals_txt}"
+            ),
+        )
+        return
+
+    team_options = [
+        {
+            "text": {"type": "plain_text", "text": f"{flag(t)} {t}", "emoji": True},
+            "value": t,
+        }
+        for t in WC_TEAMS
+    ]
+
+    initial_winner = None
+    initial_scorer = None
+    initial_semis = [None, None, None, None]
+    initial_zebra = None
+    initial_goals = None
+    if existing:
+        initial_winner = next((o for o in team_options if o["value"] == existing["winner"]), None)
+        initial_scorer = existing["top_scorer"]
+        initial_semis = [existing[f"semi{i}"] for i in range(1, 5)]
+        initial_zebra = existing["zebra"]
+        initial_goals = existing["group_goals_guess"]
+
+    winner_block = {
+        "type": "input",
+        "block_id": "block_winner",
+        "label": {"type": "plain_text", "text": ":trophy: World Cup Winner"},
+        "element": {
+            "type": "static_select",
+            "action_id": WINNER_ACTION,
+            "placeholder": {"type": "plain_text", "text": "Pick the winner…"},
+            "options": team_options,
+        },
+    }
+    if initial_winner:
+        winner_block["element"]["initial_option"] = initial_winner
+
+    scorer_block = {
+        "type": "input",
+        "block_id": "block_scorer",
+        "label": {"type": "plain_text", "text": ":athletic_shoe: Golden Boot (top scorer)"},
+        "hint": {"type": "plain_text", "text": "Start typing a player's name to search all 1,249 WC squad players."},
+        "element": {
+            "type": "external_select",
+            "action_id": SCORER_ACTION,
+            "placeholder": {"type": "plain_text", "text": "Search player…"},
+            "min_query_length": 2,
+        },
+    }
+    if initial_scorer:
+        scorer_block["element"]["initial_option"] = {
+            "text": {"type": "plain_text", "text": initial_scorer},
+            "value": initial_scorer,
+        }
+
+    semi_blocks = []
+    labels = [":one:", ":two:", ":three:", ":four:"]
+    for i, (action, label, initial) in enumerate(zip(SEMI_ACTIONS, labels, initial_semis)):
+        block = {
+            "type": "input",
+            "block_id": f"block_semi{i + 1}",
+            "label": {"type": "plain_text", "text": f"{label} Semi-finalist", "emoji": True},
+            "element": {
+                "type": "static_select",
+                "action_id": action,
+                "placeholder": {"type": "plain_text", "text": "Pick a team…"},
+                "options": team_options,
+            },
+        }
+        if initial:
+            block["element"]["initial_option"] = next(
+                (o for o in team_options if o["value"] == initial), None
+            )
+        semi_blocks.append(block)
+
+    def _zebra_option(team_name: str) -> dict:
+        return {
+            "text": {"type": "plain_text", "text": f"{flag(team_name)} {team_name}", "emoji": True},
+            "value": team_name,
+        }
+
+    zebra_block = {
+        "type": "input",
+        "block_id": "block_zebra",
+        "optional": True,
+        "label": {"type": "plain_text", "text": ":zebra_face: Zebra Pick (optional)"},
+        "hint": {
+            "type": "plain_text",
+            "text": (
+                f"Bold ({len(ZEBRA_BOLD)} teams) = standard points. "
+                f"Wildcard ({len(ZEBRA_WILDCARD)} teams) = ×{ZEBRA_WILDCARD_MULTIPLIER} all points."
+            ),
+        },
+        "element": {
+            "type": "static_select",
+            "action_id": ZEBRA_ACTION,
+            "placeholder": {"type": "plain_text", "text": "Pick an underdog…"},
+            "option_groups": [
+                {
+                    "label": {"type": "plain_text", "text": f"Bold Picks ({len(ZEBRA_BOLD)} teams)"},
+                    "options": [_zebra_option(t) for t in sorted(ZEBRA_BOLD)],
+                },
+                {
+                    "label": {"type": "plain_text", "text": f"Wildcard x{ZEBRA_WILDCARD_MULTIPLIER} pts ({len(ZEBRA_WILDCARD)} teams)"},
+                    "options": [_zebra_option(t) for t in sorted(ZEBRA_WILDCARD)],
+                },
+            ],
+        },
+    }
+    if initial_zebra:
+        zebra_block["element"]["initial_option"] = _zebra_option(initial_zebra)
+
+    goals_block = {
+        "type": "input",
+        "block_id": "block_group_goals",
+        "optional": True,
+        "label": {"type": "plain_text", "text": ":goal_net: Group Stage Total Goals (optional)"},
+        "hint": {
+            "type": "plain_text",
+            "text": f"Guess the total goals across all 72 group matches. Closest wins {GROUP_GOALS_WIN_POINTS} pts, within ±{GROUP_GOALS_NEAR_RANGE} gets {GROUP_GOALS_NEAR_POINTS} pts.",
+        },
+        "element": {
+            "type": "plain_text_input",
+            "action_id": GOALS_ACTION,
+            "placeholder": {"type": "plain_text", "text": "e.g. 156"},
+            "max_length": 4,
+        },
+    }
+    if initial_goals is not None:
+        goals_block["element"]["initial_value"] = str(initial_goals)
+
+    client.views_open(
+        trigger_id=trigger_id,
+        view={
+            "type": "modal",
+            "callback_id": CALLBACK_ID,
+            "title": {"type": "plain_text", "text": "Tournament Picks", "emoji": True},
+            "submit": {"type": "plain_text", "text": "Lock In"},
+            "close": {"type": "plain_text", "text": "Cancel"},
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": _SCORING_RUNDOWN},
+                },
+                {"type": "divider"},
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": (
+                            ":lock: These lock when *Matchday 2 begins (18 Jun)* — "
+                            "you can update any time before then."
+                        ),
+                    },
+                },
+                winner_block,
+                scorer_block,
+                {"type": "divider"},
+                *semi_blocks,
+                {"type": "divider"},
+                zebra_block,
+                goals_block,
+            ],
+        },
+    )
+
+
+def handle_picks_submit(ack, body, client):
+    values = body["view"]["state"]["values"]
+    slack_user_id = body["user"]["id"]
+
+    winner = values["block_winner"][WINNER_ACTION]["selected_option"]["value"]
+    scorer_sel = values["block_scorer"][SCORER_ACTION].get("selected_option")
+    top_scorer = scorer_sel["value"].strip() if scorer_sel else None
+
+    semis = []
+    for i, action in enumerate(SEMI_ACTIONS):
+        sel = values[f"block_semi{i + 1}"][action].get("selected_option")
+        semis.append(sel["value"] if sel else None)
+
+    zebra_sel = values["block_zebra"][ZEBRA_ACTION].get("selected_option")
+    zebra = zebra_sel["value"] if zebra_sel else None
+    zebra_tier = _zebra_tier(zebra) if zebra else None
+
+    goals_raw = (values["block_group_goals"][GOALS_ACTION].get("value") or "").strip()
+    group_goals_guess = None
+
+    if not top_scorer:
+        ack(response_action="errors", errors={"block_scorer": "Select a player from the search results."})
+        return
+
+    if goals_raw:
+        if not goals_raw.isdigit():
+            ack(response_action="errors", errors={"block_group_goals": "Enter a whole number."})
+            return
+        group_goals_guess = int(goals_raw)
+
+    # Validate all 4 semis are distinct
+    filled_semis = [s for s in semis if s]
+    if filled_semis and len(filled_semis) < 4:
+        ack(response_action="errors", errors={
+            "block_semi1": "Pick all 4 semi-finalists or leave all blank."
+        })
+        return
+    if len(set(filled_semis)) < len(filled_semis):
+        ack(response_action="errors", errors={
+            "block_semi1": "Each semi-finalist must be a different team."
+        })
+        return
+
+    with db.db() as conn:
+        if _picks_locked(conn):
+            ack(response_action="errors", errors={
+                "block_winner": "Picks are locked — Matchday 2 has already begun."
+            })
+            return
+        db.upsert_tournament_pick(
+            conn, slack_user_id, winner, top_scorer, zebra, zebra_tier,
+            semis[0], semis[1], semis[2], semis[3], group_goals_guess,
+        )
+
+    ack()
+
+    semi_line = ""
+    if filled_semis:
+        semi_line = "\n  :four: Semis: " + "  ·  ".join(f"*{flag(t)} {t}*" for t in filled_semis)
+    zebra_line = ""
+    if zebra:
+        tier_label = ":black_joker: Wildcard" if zebra_tier == "WILDCARD" else "⭐ Bold"
+        zebra_line = f"\n  :zebra_face: Zebra: *{flag(zebra)} {zebra}* ({tier_label})"
+    goals_line = f"\n  :goal_net: Group goals guess: *{group_goals_guess}*" if group_goals_guess is not None else ""
+
+    client.chat_postEphemeral(
+        channel=slack_user_id,
+        user=slack_user_id,
+        text=(
+            f":white_check_mark: Tournament picks saved!\n"
+            f"  :trophy: Winner: *{flag(winner)} {winner}*\n"
+            f"  :athletic_shoe: Golden Boot: *{top_scorer}*"
+            f"{semi_line}{zebra_line}{goals_line}\n\n"
+            f"You can update these any time before Matchday 2 begins on *18 Jun*."
+        ),
+    )
+
+
+def _picks_locked(conn) -> bool:
+    kickoff = db.get_first_matchday2_kickoff(conn)
+    return kickoff is not None and is_kickoff_passed(kickoff)
+
+
+def _zebra_tier(team_name: str) -> str:
+    return "WILDCARD" if team_name in ZEBRA_WILDCARD else "BOLD"

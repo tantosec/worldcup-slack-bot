@@ -1,0 +1,63 @@
+# FIFA World Rankings — lower number = better ranked.
+# Update these to match the official rankings at tournament start.
+# Keys must match team names returned by football-data.org exactly.
+RANKINGS: dict[str, int] = {
+    "Argentina": 1,
+    "France": 2,
+    "England": 3,
+    "Brazil": 4,
+    "Belgium": 5,
+    "Croatia": 6,
+    "Netherlands": 7,
+    "Portugal": 8,
+    "Spain": 9,
+    "Italy": 10,
+    "United States": 11,
+    "Mexico": 12,
+    "Germany": 13,
+    "Colombia": 14,
+    "Uruguay": 15,
+    "Denmark": 16,
+    "Switzerland": 17,
+    "Morocco": 18,
+    "Senegal": 19,
+    "Japan": 20,
+    "Australia": 21,
+    "South Korea": 22,
+    "Canada": 23,
+    "Ecuador": 24,
+    "Austria": 25,
+    "Hungary": 26,
+    "Turkey": 27,
+    "Ukraine": 28,
+    "Poland": 29,
+    "Serbia": 30,
+    "Czechia": 31,
+    "Iran": 32,
+    "Peru": 33,
+    "Chile": 34,
+    "Nigeria": 35,
+    "Cameroon": 36,
+    "Ghana": 37,
+    "Egypt": 38,
+    "Algeria": 39,
+    "Tunisia": 40,
+    "Saudi Arabia": 41,
+    "Qatar": 42,
+    "South Africa": 43,
+    "Costa Rica": 44,
+    "Jamaica": 45,
+    "Honduras": 46,
+    "Venezuela": 47,
+    "Slovenia": 48,
+    "New Zealand": 49,
+    "Panama": 50,
+    "Bolivia": 51,
+    "Paraguay": 52,
+}
+
+UNKNOWN_RANK = 99
+
+
+def get_rank(team_name: str) -> int:
+    return RANKINGS.get(team_name, UNKNOWN_RANK)

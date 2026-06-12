@@ -1,0 +1,48 @@
+_metadata:
+  major_version: 2
+  minor_version: 1
+
+display_information:
+  name: WC 2026 Bot
+  description: World Cup 2026 prediction league
+  long_description: "Compete with your teammates to predict match scores throughout the entire FIFA World Cup 2026. Earn points for correct results, exact scores, and calling upsets. Make tournament picks before Matchday 2 locks: choose the winner, golden boot, four semi-finalists, an underdog zebra team, and guess the total group stage goals. The bot automatically scores every match, tracks the leaderboard, sends kickoff reminders, and posts result summaries after each game. Use /register to join, /predict to submit scores, and /picks for your tournament picks."
+  background_color: "#1a472a"
+
+features:
+  bot_user:
+    display_name: WC 2026 Bot
+    always_online: true
+  slash_commands:
+    - command: "/register"
+      description: Join the World Cup prediction league
+    - command: "/picks"
+      description: Set tournament picks (winner, golden boot, semis, zebra)
+    - command: "/predict"
+      description: Pick a match day and predict scores
+    - command: "/leaderboard"
+      description: Show the current standings
+    - command: "/fixtures"
+      description: Show upcoming fixtures
+    - command: "/results"
+      description: Show recent match results
+    - command: "/scoring"
+      description: Show how points are calculated
+    - command: "/mystats"
+      description: Show personal stats and picks — use /mystats @user to view someone else
+    - command: "/help"
+      description: List all available commands
+
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - commands
+      - users:read
+      - im:write
+
+settings:
+  socket_mode_enabled: true
+  token_rotation_enabled: false
+  org_deploy_enabled: false
+  interactivity:
+    is_enabled: true
