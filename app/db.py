@@ -263,7 +263,7 @@ def get_leaderboard(conn: sqlite3.Connection) -> list[sqlite3.Row]:
                 + COALESCE(tp.semi_points, 0)
                 + COALESCE(tp.group_goals_points, 0)            AS total_points,
             SUM(CASE WHEN p.points >= 9  THEN 1 ELSE 0 END)   AS exact_scores,
-            SUM(CASE WHEN p.points IN (5, 8, 10, 13, 14, 17, 15, 20, 23, 25, 27, 28) THEN 1 ELSE 0 END) AS upsets_called
+            SUM(CASE WHEN p.points IN (5, 8, 10, 11, 12, 15, 16, 22, 28, 33) THEN 1 ELSE 0 END) AS upsets_called
         FROM users u
         LEFT JOIN predictions p      ON p.slack_user_id = u.slack_user_id
         LEFT JOIN tournament_picks tp ON tp.slack_user_id = u.slack_user_id

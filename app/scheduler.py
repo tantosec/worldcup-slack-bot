@@ -147,7 +147,6 @@ def send_kickoff_reminders(slack_client):
     for match in matches:
         with db.db() as conn:
             unpredicted = db.get_unpredicted_enrolled_users(conn, match["id"])
-            db.mark_reminder_sent(conn, match["id"])
 
         lines = [
             f":alarm_clock: *Kickoff in ~1 hour!*",
@@ -164,6 +163,8 @@ def send_kickoff_reminders(slack_client):
 
         try:
             slack_client.chat_postMessage(channel=channel, text="\n".join(lines))
+            with db.db() as conn:
+                db.mark_reminder_sent(conn, match["id"])
         except Exception as exc:
             logger.error("Failed to post kickoff reminder: %s", exc)
 
@@ -181,7 +182,6 @@ def send_matchday_wrap(slack_client):
         with db.db() as conn:
             matches = db.get_matches_on_date(conn, match_date)
             top_earners = db.get_day_top_earners(conn, match_date)
-            db.mark_wrap_sent(conn, match_date)
 
         total_goals = sum(
             (m["home_score"] or 0) + (m["away_score"] or 0)
@@ -207,6 +207,8 @@ def send_matchday_wrap(slack_client):
 
         try:
             slack_client.chat_postMessage(channel=channel, text="\n".join(lines))
+            with db.db() as conn:
+                db.mark_wrap_sent(conn, match_date)
         except Exception as exc:
             logger.error("Failed to post matchday wrap for %s: %s", match_date, exc)
 
@@ -297,7 +299,6 @@ def send_phase_wrap(slack_client):
             stats = db.get_stage_stats(conn, stage)
             leaderboard = db.get_leaderboard(conn)
             upcoming_stages = db.get_upcoming_stages(conn)
-            db.mark_phase_wrap_sent(conn, stage)
 
         lines = [_PHASE_HEADERS.get(stage, f":checkered_flag: *{stage_label(stage)} Complete!*"), ""]
 
@@ -356,6 +357,8 @@ def send_phase_wrap(slack_client):
 
         try:
             slack_client.chat_postMessage(channel=channel, text="\n".join(lines))
+            with db.db() as conn:
+                db.mark_phase_wrap_sent(conn, stage)
             logger.info("Phase wrap posted for %s", stage)
         except Exception as exc:
             logger.error("Failed to post phase wrap for %s: %s", stage, exc)
