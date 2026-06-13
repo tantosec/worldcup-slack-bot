@@ -42,6 +42,9 @@ def init_db():
                 away_score      INTEGER,
                 scored          INTEGER NOT NULL DEFAULT 0,
                 reminder_sent   INTEGER NOT NULL DEFAULT 0,
+                kickoff_announced   INTEGER NOT NULL DEFAULT 0,
+                notified_home_score INTEGER,
+                notified_away_score INTEGER,
                 winner          TEXT,
                 duration        TEXT NOT NULL DEFAULT 'REGULAR',
                 et_home         INTEGER,
@@ -179,6 +182,28 @@ def get_match_predictions_all_users(conn: sqlite3.Connection, match_id: int) -> 
         LEFT JOIN predictions p ON p.match_id = ? AND p.slack_user_id = u.slack_user_id
         ORDER BY u.enrolled_at ASC
     """, (match_id,)).fetchall()
+
+
+def get_matches_with_score_change(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """IN_PLAY matches whose score has changed since we last posted a goal notification."""
+    return conn.execute("""
+        SELECT * FROM matches
+        WHERE status IN ('IN_PLAY', 'PAUSED', 'HALFTIME')
+          AND home_score IS NOT NULL AND away_score IS NOT NULL
+          AND (
+            notified_home_score IS NULL OR notified_away_score IS NULL
+            OR home_score != notified_home_score
+            OR away_score != notified_away_score
+          )
+        ORDER BY kickoff_utc ASC
+    """).fetchall()
+
+
+def mark_score_notified(conn: sqlite3.Connection, match_id: int, home_score: int, away_score: int):
+    conn.execute(
+        "UPDATE matches SET notified_home_score = ?, notified_away_score = ? WHERE id = ?",
+        (home_score, away_score, match_id),
+    )
 
 
 def get_finished_unscored_matches(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -460,6 +485,22 @@ def get_first_matchday2_kickoff(conn: sqlite3.Connection) -> str | None:
         ORDER BY kickoff_utc ASC LIMIT 1
     """).fetchone()
     return row["kickoff_utc"] if row else None
+
+
+# ── Kickoff announcement queries ──────────────────────────────────────────────
+
+def get_matches_needing_kickoff_announcement(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Matches that are now live but haven't had their predictions revealed yet."""
+    return conn.execute("""
+        SELECT * FROM matches
+        WHERE status IN ('IN_PLAY', 'PAUSED', 'HALFTIME')
+          AND kickoff_announced = 0
+        ORDER BY kickoff_utc ASC
+    """).fetchall()
+
+
+def mark_kickoff_announced(conn: sqlite3.Connection, match_id: int):
+    conn.execute("UPDATE matches SET kickoff_announced = 1 WHERE id = ?", (match_id,))
 
 
 # ── Kickoff reminder queries ───────────────────────────────────────────────────

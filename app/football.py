@@ -142,6 +142,25 @@ def fetch_match(external_id: int) -> dict | None:
         return None
 
 
+def fetch_match_goals(external_id: int) -> list[dict]:
+    """Return goal events for a match: [{minute, scorer_name, team_name}, ...]"""
+    try:
+        data = _get(f"/matches/{external_id}")
+        goals = []
+        for g in data.get("goals", []):
+            scorer = g.get("scorer") or {}
+            team = g.get("team") or {}
+            goals.append({
+                "minute":      g.get("minute"),
+                "scorer_name": scorer.get("name") or "Unknown",
+                "team_name":   team.get("name") or "Unknown",
+            })
+        return goals
+    except Exception as exc:
+        logger.error("Failed to fetch goals for match %s: %s", external_id, exc)
+        return []
+
+
 def is_kickoff_passed(kickoff_utc: str) -> bool:
     kickoff = datetime.fromisoformat(kickoff_utc.replace("Z", "+00:00"))
     return datetime.now(timezone.utc) >= kickoff

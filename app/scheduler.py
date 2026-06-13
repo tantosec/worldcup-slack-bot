@@ -3,7 +3,7 @@ import os
 from apscheduler.schedulers.background import BackgroundScheduler
 from app import db
 from app.flags import flag, home, away, vs
-from app.football import fetch_all_matches, fetch_top_scorer, format_kickoff, format_score, format_score_note, stage_label
+from app.football import fetch_all_matches, fetch_match_goals, fetch_top_scorer, format_kickoff, format_score, format_score_note, stage_label, estimate_match_time
 from app.scoring import calculate_points, points_label, score_semi_picks, score_group_goals
 
 logger = logging.getLogger(__name__)
@@ -49,16 +49,24 @@ def score_finished_matches(slack_client=None):
                 db.update_prediction_points(conn, pred["id"], pts)
                 results.append((pred["slack_user_id"], pred["home_score"], pred["away_score"], pts))
 
-            db.mark_match_scored(conn, match["id"])
+        with db.db() as conn:
+            leaderboard = db.get_leaderboard(conn)
 
         if slack_client:
-            _post_result_summary(slack_client, match, results)
+            try:
+                _post_result_summary(slack_client, match, results, leaderboard)
+            except Exception as exc:
+                logger.error("Failed to post result summary for match %s, will retry: %s", match["id"], exc)
+                continue
             for user_id, pred_home, pred_away, pts in results:
                 _dm_points_earned(slack_client, user_id, match, pred_home, pred_away, pts)
 
+        with db.db() as conn:
+            db.mark_match_scored(conn, match["id"])
 
-def _post_result_summary(slack_client, match, results: list[tuple[str, int, int, int]]):
-    """Post match result to channel with each user's prediction shown."""
+
+def _post_result_summary(slack_client, match, results: list[tuple[str, int, int, int]], leaderboard=None):
+    """Post match result to channel with each user's prediction and top 10 leaderboard."""
     channel = os.getenv("RESULTS_CHANNEL")
     if not channel:
         return
@@ -91,10 +99,15 @@ def _post_result_summary(slack_client, match, results: list[tuple[str, int, int,
     if not results:
         lines.append("  _(no predictions were made for this match)_")
 
-    try:
-        slack_client.chat_postMessage(channel=channel, text="\n".join(lines))
-    except Exception as exc:
-        logger.error("Failed to post result summary: %s", exc)
+    if leaderboard:
+        lines.append("")
+        lines.append(":trophy: *Leaderboard*")
+        medals = {1: ":first_place_medal:", 2: ":second_place_medal:", 3: ":third_place_medal:"}
+        for i, row in enumerate(leaderboard[:10], start=1):
+            medal = medals.get(i, f"`{i}.`")
+            lines.append(f"  {medal} <@{row['slack_user_id']}>  —  *{row['total_points']} pts*")
+
+    slack_client.chat_postMessage(channel=channel, text="\n".join(lines))
 
 
 def _dm_points_earned(slack_client, user_id: str, match, pred_home: int, pred_away: int, pts: int):
@@ -133,6 +146,136 @@ def _dm_points_earned(slack_client, user_id: str, match, pred_home: int, pred_aw
         )
     except Exception as exc:
         logger.error("Failed to DM %s: %s", user_id, exc)
+
+
+def send_goal_notifications(slack_client):
+    """Post a goal alert whenever the live score changes."""
+    channel = os.getenv("RESULTS_CHANNEL")
+    if not channel:
+        return
+
+    with db.db() as conn:
+        matches = db.get_matches_with_score_change(conn)
+
+    for match in matches:
+        curr_home = match["home_score"]
+        curr_away = match["away_score"]
+
+        # First sync at 0-0: just mark notified, don't post
+        if curr_home == 0 and curr_away == 0:
+            with db.db() as conn:
+                db.mark_score_notified(conn, match["id"], curr_home, curr_away)
+            continue
+
+        prev_home = match["notified_home_score"] if match["notified_home_score"] is not None else 0
+        prev_away = match["notified_away_score"] if match["notified_away_score"] is not None else 0
+
+        # Fetch goals from API to get scorer names
+        goals = fetch_match_goals(match["external_id"])
+
+        # Work out which goals are new based on the score delta
+        new_home = curr_home - prev_home
+        new_away = curr_away - prev_away
+        new_total = new_home + new_away
+
+        # Take the last new_total goals from the list (most recent)
+        new_goals = goals[-new_total:] if new_total > 0 and goals else []
+
+        # Build header
+        scoring_teams = []
+        if new_home > 0:
+            scoring_teams.append(f"{flag(match['home_team'])} {match['home_team']}")
+        if new_away > 0:
+            scoring_teams.append(f"{flag(match['away_team'])} {match['away_team']}")
+
+        if len(scoring_teams) == 1 and new_total == 1:
+            header = f":rotating_light: *GOAAAAAL! {scoring_teams[0]} scores!*"
+        elif new_total > 1:
+            header = f":rotating_light: *GOALS! {'  ·  '.join(scoring_teams)}*"
+        else:
+            header = f":rotating_light: *GOAL!*"
+
+        match_time = estimate_match_time(match["kickoff_utc"], match["status"])
+        lines = [
+            header,
+            f"*{home(match['home_team'])} {curr_home} - {curr_away} {away(match['away_team'])}*  ·  _{match_time}_",
+        ]
+
+        for g in new_goals:
+            lines.append(f"  :soccer: {flag(g['team_name'])} {g['scorer_name']}  {g['minute']}'")
+
+        # Show who is currently scoring points at this live score
+        with db.db() as conn:
+            preds = db.get_match_predictions_all_users(conn, match["id"])
+
+        scorers = []
+        for p in preds:
+            if p["home_score"] is None:
+                continue
+            pts = calculate_points(
+                p["home_score"], p["away_score"],
+                curr_home, curr_away,
+                match["home_team"], match["away_team"],
+                match["stage"],
+            )
+            if pts > 0:
+                exact = p["home_score"] == curr_home and p["away_score"] == curr_away
+                icon = ":dart:" if exact else ":white_check_mark:"
+                scorers.append((icon, p["slack_user_id"], p["home_score"], p["away_score"], pts))
+
+        if scorers:
+            lines.append("")
+            lines.append(":crystal_ball: *Scoring points right now:*")
+            for icon, user_id, ph, pa, pts in sorted(scorers, key=lambda x: -x[4]):
+                lines.append(f"  {icon} <@{user_id}>  `{ph} - {pa}`  —  *+{points_label(pts)}*")
+
+        try:
+            slack_client.chat_postMessage(channel=channel, text="\n".join(lines))
+            with db.db() as conn:
+                db.mark_score_notified(conn, match["id"], curr_home, curr_away)
+        except Exception as exc:
+            logger.error("Failed to post goal notification for match %s: %s", match["id"], exc)
+
+
+def send_kickoff_announcements(slack_client):
+    """Post all predictions to channel when a match kicks off."""
+    channel = os.getenv("RESULTS_CHANNEL")
+    if not channel:
+        return
+
+    with db.db() as conn:
+        matches = db.get_matches_needing_kickoff_announcement(conn)
+
+    for match in matches:
+        with db.db() as conn:
+            all_preds = db.get_match_predictions_all_users(conn, match["id"])
+            enrolled = db.get_enrolled_users(conn)
+
+        lines = [
+            f":soccer: *Kickoff!*  ·  {stage_label(match['stage'])}",
+            f"*{vs(match['home_team'], match['away_team'])}*",
+            f":calendar: {format_kickoff(match['kickoff_utc'])}",
+            "",
+            ":bar_chart: *Predictions:*",
+        ]
+
+        predicted_ids = {p["slack_user_id"] for p in all_preds if p["home_score"] is not None}
+
+        for p in all_preds:
+            if p["home_score"] is not None:
+                lines.append(f"  <@{p['slack_user_id']}>  `{p['home_score']} - {p['away_score']}`")
+
+        no_pred = [u["slack_user_id"] for u in enrolled if u["slack_user_id"] not in predicted_ids]
+        if no_pred:
+            lines.append("")
+            lines.append(":x: No prediction: " + "  ".join(f"<@{u}>" for u in no_pred))
+
+        try:
+            slack_client.chat_postMessage(channel=channel, text="\n".join(lines))
+            with db.db() as conn:
+                db.mark_kickoff_announced(conn, match["id"])
+        except Exception as exc:
+            logger.error("Failed to post kickoff announcement: %s", exc)
 
 
 def send_kickoff_reminders(slack_client):
@@ -566,6 +709,14 @@ def start_scheduler(slack_client=None) -> BackgroundScheduler:
     scheduler.add_job(
         lambda: post_picks_reveal(slack_client),
         "interval", seconds=poll_interval, id="picks_reveal",
+    )
+    scheduler.add_job(
+        lambda: send_goal_notifications(slack_client),
+        "interval", seconds=poll_interval, id="goal_notifications",
+    )
+    scheduler.add_job(
+        lambda: send_kickoff_announcements(slack_client),
+        "interval", seconds=poll_interval, id="kickoff_announcements",
     )
     scheduler.add_job(
         lambda: send_kickoff_reminders(slack_client),
