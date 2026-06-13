@@ -3,7 +3,7 @@ import os
 from apscheduler.schedulers.background import BackgroundScheduler
 from app import db
 from app.flags import flag, home, away, vs
-from app.football import fetch_all_matches, fetch_match_goals, fetch_top_scorer, format_kickoff, format_score, format_score_note, stage_label, estimate_match_time
+from app.football import fetch_all_matches, fetch_top_scorer, format_kickoff, format_score, format_score_note, stage_label, estimate_match_time
 from app.scoring import calculate_points, points_label, score_semi_picks, score_group_goals
 
 logger = logging.getLogger(__name__)
@@ -170,16 +170,9 @@ def send_goal_notifications(slack_client):
         prev_home = match["notified_home_score"] if match["notified_home_score"] is not None else 0
         prev_away = match["notified_away_score"] if match["notified_away_score"] is not None else 0
 
-        # Fetch goals from API to get scorer names
-        goals = fetch_match_goals(match["external_id"])
-
-        # Work out which goals are new based on the score delta
         new_home = curr_home - prev_home
         new_away = curr_away - prev_away
         new_total = new_home + new_away
-
-        # Take the last new_total goals from the list (most recent)
-        new_goals = goals[-new_total:] if new_total > 0 and goals else []
 
         # Build header
         scoring_teams = []
@@ -188,21 +181,18 @@ def send_goal_notifications(slack_client):
         if new_away > 0:
             scoring_teams.append(f"{flag(match['away_team'])} {match['away_team']}")
 
-        if len(scoring_teams) == 1 and new_total == 1:
+        if new_total == 1:
             header = f":rotating_light: *GOAAAAAL! {scoring_teams[0]} scores!*"
-        elif new_total > 1:
-            header = f":rotating_light: *GOALS! {'  ·  '.join(scoring_teams)}*"
+        elif len(scoring_teams) == 1:
+            header = f":rotating_light: *GOALS! {scoring_teams[0]} scores {new_total}!*"
         else:
-            header = f":rotating_light: *GOAL!*"
+            header = f":rotating_light: *GOALS! {'  ·  '.join(scoring_teams)} both score!*"
 
         match_time = estimate_match_time(match["kickoff_utc"], match["status"])
         lines = [
             header,
             f"*{home(match['home_team'])} {curr_home} - {curr_away} {away(match['away_team'])}*  ·  _{match_time}_",
         ]
-
-        for g in new_goals:
-            lines.append(f"  :soccer: {flag(g['team_name'])} {g['scorer_name']}  {g['minute']}'")
 
         # Show who is currently scoring points at this live score
         with db.db() as conn:
