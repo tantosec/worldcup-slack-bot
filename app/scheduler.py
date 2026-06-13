@@ -72,7 +72,7 @@ def _post_result_summary(slack_client, match, results: list[tuple[str, int, int,
         return
 
     results_sorted = sorted(results, key=lambda r: r[3], reverse=True)
-    duration = match.get("duration", "REGULAR")
+    duration = match["duration"] or "REGULAR"
     ft_label = ":checkered_flag: *Full Time*"
     if duration == "PENALTY_SHOOTOUT":
         ft_label = ":checkered_flag: *Full Time* _(Penalties)_"
@@ -128,7 +128,7 @@ def _dm_points_earned(slack_client, user_id: str, match, pred_home: int, pred_aw
     rank_txt = f"#{rank}" if rank else "—"
     stage_txt = stage_label(match["stage"])
     multiplier_note = f" _(×{_stage_multiplier_label(match['stage'])} {stage_txt})_" if match["stage"] != "GROUP_STAGE" else ""
-    duration = match.get("duration", "REGULAR")
+    duration = match["duration"] or "REGULAR"
     if duration == "PENALTY_SHOOTOUT":
         multiplier_note += " _(went to penalties)_"
     elif duration == "EXTRA_TIME":
