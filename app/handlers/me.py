@@ -134,15 +134,21 @@ def handle_me(respond, body, client):
         blocks.append(_context("_No finished matches predicted yet._"))
 
     if upcoming_preds:
+        _UPCOMING_LIMIT = 5
+        shown = upcoming_preds[:_UPCOMING_LIMIT]
+        hidden = len(upcoming_preds) - len(shown)
         blocks += [_divider(), _section("⏰  *Upcoming*")]
-        for p in upcoming_preds:
+        for p in shown:
             blocks.append(_section(
                 f"*{vs(p['home_team'], p['away_team'])}*  ·  {format_kickoff(p['kickoff_utc'])}\n"
                 f":pencil: Your pick: *{p['pred_home']} - {p['pred_away']}*"
             ))
+            # Combine odds + underdog into one context block to save blocks
             context_parts = [x for x in [format_prob_line(p), format_underdog_line(p, action=True)] if x]
-            for part in context_parts:
-                blocks.append(_context(part))
+            if context_parts:
+                blocks.append(_context("  ·  ".join(context_parts)))
+        if hidden:
+            blocks.append(_context(f"_...and {hidden} more — use `/predict` to manage all picks_"))
 
     respond(response_type="ephemeral", blocks=blocks, text=f"{header_name} World Cup 2026 Stats")
 
