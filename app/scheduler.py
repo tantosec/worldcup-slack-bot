@@ -2,9 +2,9 @@ import logging
 import os
 from apscheduler.schedulers.background import BackgroundScheduler
 from app import db
-from app.fifa_rankings import get_rank
 from app.flags import flag, home, away, vs
 from app.football import fetch_all_matches, fetch_top_scorer, format_kickoff, format_score, format_score_note, stage_label, estimate_match_time
+from app.odds import fetch_and_store_odds, format_prob_line, format_underdog_line
 from app.scoring import calculate_points, points_label, score_semi_picks, score_group_goals
 
 logger = logging.getLogger(__name__)
@@ -83,9 +83,14 @@ def _post_result_summary(slack_client, match, results: list[tuple[str, int, int,
     lines = [
         f"{ft_label}  ·  {stage_label(match['stage'])}",
         f"*{home(match['home_team'])} {format_score(match)} {away(match['away_team'])}{format_score_note(match)}*",
-        "",
-        ":bar_chart: *Predictions:*",
     ]
+    prob_line = format_prob_line(match)
+    if prob_line:
+        lines.append(prob_line)
+    ud_line = format_underdog_line(match)
+    if ud_line:
+        lines.append(ud_line)
+    lines += ["", ":bar_chart: *Predictions:*"]
 
     for user_id, pred_home, pred_away, pts in results_sorted:
         pred_str = f"{pred_home} - {pred_away}"
@@ -194,6 +199,12 @@ def send_goal_notifications(slack_client):
             header,
             f"*{home(match['home_team'])} {curr_home} - {curr_away} {away(match['away_team'])}*  ·  _{match_time}_",
         ]
+        prob_line = format_prob_line(match)
+        if prob_line:
+            lines.append(prob_line)
+        ud_line = format_underdog_line(match)
+        if ud_line:
+            lines.append(ud_line)
 
         # Show who is currently scoring points at this live score
         with db.db() as conn:
@@ -246,9 +257,14 @@ def send_kickoff_announcements(slack_client):
             f":soccer: *Kickoff!*  ·  {stage_label(match['stage'])}",
             f"*{vs(match['home_team'], match['away_team'])}*",
             f":calendar: {format_kickoff(match['kickoff_utc'])}",
-            "",
-            ":bar_chart: *Predictions:*",
         ]
+        prob_line = format_prob_line(match)
+        if prob_line:
+            lines.append(prob_line)
+        ud_line = format_underdog_line(match, action=True)
+        if ud_line:
+            lines.append(ud_line)
+        lines += ["", ":bar_chart: *Predictions:*"]
 
         predicted_ids = {p["slack_user_id"] for p in all_preds if p["home_score"] is not None}
 
@@ -282,21 +298,17 @@ def send_kickoff_reminders(slack_client):
         with db.db() as conn:
             unpredicted = db.get_unpredicted_enrolled_users(conn, match["id"])
 
-        home_rank = get_rank(match["home_team"])
-        away_rank = get_rank(match["away_team"])
-        if home_rank != away_rank:
-            underdog = match["home_team"] if home_rank > away_rank else match["away_team"]
-            underdog_line = f":zap: Upset pick: {flag(underdog)} {underdog} wins → *+2 bonus pts*"
-        else:
-            underdog_line = None
-
         lines = [
             f":alarm_clock: *Kickoff in ~1 hour!*",
             f"*{vs(match['home_team'], match['away_team'])}*",
             f":calendar: {format_kickoff(match['kickoff_utc'])}  ·  {stage_label(match['stage'])}",
         ]
-        if underdog_line:
-            lines.append(underdog_line)
+        prob_line = format_prob_line(match)
+        if prob_line:
+            lines.append(prob_line)
+        ud_line = format_underdog_line(match, action=True)
+        if ud_line:
+            lines.append(ud_line)
 
         if unpredicted:
             mentions = "  ".join(f"<@{u}>" for u in unpredicted)
@@ -702,6 +714,12 @@ def start_scheduler(slack_client=None) -> BackgroundScheduler:
     scheduler = BackgroundScheduler(timezone="UTC")
 
     scheduler.add_job(sync_fixtures, "interval", seconds=poll_interval, id="sync_fixtures")
+
+    def sync_odds_job():
+        with db.db() as conn:
+            fetch_and_store_odds(conn)
+
+    scheduler.add_job(sync_odds_job, "interval", hours=6, id="sync_odds")
 
     scheduler.add_job(
         lambda: score_finished_matches(slack_client),

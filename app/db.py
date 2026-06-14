@@ -50,7 +50,10 @@ def init_db():
                 et_home         INTEGER,
                 et_away         INTEGER,
                 penalties_home  INTEGER,
-                penalties_away  INTEGER
+                penalties_away  INTEGER,
+                home_odds       REAL,
+                draw_odds       REAL,
+                away_odds       REAL
             );
 
             CREATE TABLE IF NOT EXISTS daily_wrap_sent (
