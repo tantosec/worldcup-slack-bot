@@ -10,8 +10,12 @@ A Slack bot for running an internal World Cup 2026 prediction league. Players pr
 - **Tournament picks** — winner, golden boot, semi-finalists, zebra underdog, group stage goals total
 - **Auto scoring** — matches scored within one poll cycle of finishing
 - **Kickoff reminders** — channel reminder ~1 hour before each match, tagging unpredicted players
+- **Kickoff announcements** — all predictions revealed the moment a match kicks off
+- **Goal notifications** — live alert on every score change with who is earning points at that moment
+- **Win probabilities** — live betting odds shown in every match message (predict modal, reminders, kickoff, goals, results)
+- **Underdog detection** — automatically identifies the underdog using betting odds (≥15% win probability gap) with FIFA rankings as fallback
 - **Live fixtures** — `/fixtures` shows in-progress matches with current score and everyone's predictions
-- **Result summaries** — full-time result posted to channel with everyone's predictions and points
+- **Result summaries** — full-time result posted to channel with everyone's predictions, points, and top 10 leaderboard
 - **Personal DMs** — each player gets a DM with their points and rank after every match
 - **Matchday wraps** — end-of-day summary with all results and top earners
 - **Phase wraps** — rich announcement after each round completes (group stage, R32, R16, QF, SF, Final) with full leaderboard
@@ -26,9 +30,12 @@ A Slack bot for running an internal World Cup 2026 prediction league. Players pr
 |--------|--------|
 | Exact score | 9 pts |
 | Correct result (W/D/L) | 3 pts |
-| Upset bonus (called the underdog) | +2 pts |
+| Upset bonus (predicted the underdog wins — and they did) | +2 pts |
 
 **Knockout multipliers:** ×1.5 (R32/R16) · ×2 (QF) · ×2.5 (SF/3rd) · ×3 (Final)
+
+**How is the underdog determined?**
+Live betting odds are used — the team with the lower win probability is the underdog, but only when the gap is ≥15 percentage points (closer matches are too ambiguous to call). When odds aren't available yet, FIFA rankings are used as a fallback (gap ≥15 positions). A draw does **not** trigger the upset bonus — you need to predict the underdog wins outright.
 
 ### Tournament Picks _(lock before Matchday 2, 18 Jun)_
 | Pick | Points |
@@ -58,8 +65,9 @@ A Slack bot for running an internal World Cup 2026 prediction league. Players pr
 
 - **Python 3.12** with [slack-bolt](https://github.com/slackapi/bolt-python) in Socket Mode
 - **SQLite** with WAL mode for persistence
-- **APScheduler** for background jobs (scoring, reminders, wraps)
+- **APScheduler** for background jobs (scoring, reminders, wraps, odds sync)
 - **football-data.org** free tier API for live fixtures and results
+- **The Odds API** free tier for live betting odds and win probabilities (500 req/month — synced every 6 hours)
 - **Docker** + Docker Compose for deployment
 
 ## Setup
@@ -82,7 +90,13 @@ Go to [football-data.org](https://www.football-data.org/client/register) → reg
 
 The free tier gives you access to all WC 2026 fixtures, results, and scorers — no credit card required.
 
-### 4. Configure environment
+### 4. Get an Odds API key
+
+Go to [the-odds-api.com](https://the-odds-api.com) → sign up for a free account → copy your API key.
+
+The free tier gives 500 requests/month. The bot syncs odds every 6 hours (~120 requests for the full tournament).
+
+### 5. Configure environment
 
 ```bash
 cp .env.example .env
@@ -94,19 +108,18 @@ Edit `.env`:
 SLACK_BOT_TOKEN=xoxb-...
 SLACK_APP_TOKEN=xapp-...
 FOOTBALL_DATA_API_KEY=your-key-here   # free at football-data.org
+ODDS_API_KEY=your-key-here            # free at the-odds-api.com
 RESULTS_CHANNEL=C0XXXXXXXXX           # Slack channel ID for #worldcup-2026
 DISPLAY_TIMEZONE=Australia/Sydney     # timezone for kickoff times
 POLL_INTERVAL=60                      # seconds between scoring/sync cycles (default: 60)
 ORG_NAME=TantoSec                     # organisation name shown in messages
 ```
 
-Get a free football-data.org API key at [football-data.org](https://www.football-data.org/).
-
-### 5. Invite the bot to the channel
+### 6. Invite the bot to the channel
 
 In Slack, run `/invite @WC 2026 Bot` in your results channel.
 
-### 6. Deploy
+### 7. Deploy
 
 ```bash
 docker compose up -d
@@ -121,13 +134,14 @@ The bot initialises the database, fetches all fixtures, and starts listening on 
 app/
 ├── main.py              # Slack app, command registration, entry point
 ├── db.py                # SQLite schema and all queries
-├── scheduler.py         # APScheduler jobs (scoring, reminders, wraps)
+├── scheduler.py         # APScheduler jobs (scoring, reminders, wraps, odds sync)
 ├── football.py          # football-data.org API client and score formatting
+├── odds.py              # The Odds API client, win probability calculation, underdog detection
 ├── scoring.py           # Points calculation logic
 ├── players.py           # Player search for golden boot autocomplete
 ├── players.json         # 1,249 WC 2026 squad players
 ├── flags.py             # Country flag emoji map
-├── fifa_rankings.py     # FIFA rankings for upset detection
+├── fifa_rankings.py     # Official June 2026 FIFA rankings (underdog fallback)
 └── handlers/
     ├── predict.py       # /predict — dynamic date picker modal
     ├── picks.py         # /picks — tournament picks modal
@@ -144,5 +158,7 @@ app/
 - Runs over Socket Mode — no public IP or open ports required, any machine with internet access works
 - SQLite database is persisted via Docker volume at `./data/worldcup.db`
 - All scheduled jobs run on `POLL_INTERVAL` seconds (default 60s in production)
+- Odds sync runs every 6 hours regardless of `POLL_INTERVAL` to conserve API credits
 - Knockout matches with TBD teams are skipped during sync and added automatically once teams are confirmed
 - Times displayed in `DISPLAY_TIMEZONE` (default: `Australia/Sydney`)
+- DB schema changes are applied directly via `ALTER TABLE` on the production database — no migration logic in code
