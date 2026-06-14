@@ -4,6 +4,7 @@ import logging
 from app import db
 from app.flags import flag, home, away, vs
 from app.football import format_score, format_score_note, format_kickoff, stage_label
+from app.odds import format_prob_line, format_underdog_line, get_underdog
 from app.scoring import TOURNAMENT_PICK_POINTS, SEMI_PICK_POINTS
 
 logger = logging.getLogger(__name__)
@@ -90,17 +91,40 @@ def handle_me(respond, body, client):
             else:
                 icon = ":x:"
                 result = "Wrong"
-            lines.append(f"{match_line}\n  {icon} Picked {pred_str}  ·  {result}  ·  *+{pts} pts*")
+
+            upset_flag = ""
+            if pts > 0:
+                underdog = get_underdog(p)
+                if underdog:
+                    underdog_won = (
+                        (underdog == p["home_team"] and p["home_score"] > p["away_score"]) or
+                        (underdog == p["away_team"] and p["away_score"] > p["home_score"])
+                    )
+                    pred_underdog_wins = (
+                        (underdog == p["home_team"] and p["pred_home"] > p["pred_away"]) or
+                        (underdog == p["away_team"] and p["pred_away"] > p["pred_home"])
+                    )
+                    if underdog_won and pred_underdog_wins:
+                        upset_flag = "  :zap: Upset!"
+
+            lines.append(f"{match_line}\n  {icon} Picked {pred_str}  ·  {result}  ·  *+{pts} pts*{upset_flag}")
     else:
         lines.append("  _No finished matches predicted yet._")
 
     if upcoming_preds:
         lines.append("")
         for p in upcoming_preds:
-            lines.append(
+            entry = (
                 f"*{vs(p['home_team'], p['away_team'])}*  ·  {format_kickoff(p['kickoff_utc'])}\n"
                 f"  :pencil: Your pick: *{p['pred_home']} - {p['pred_away']}*"
             )
+            prob_line = format_prob_line(p)
+            if prob_line:
+                entry += f"\n  {prob_line}"
+            ud_line = format_underdog_line(p, action=True)
+            if ud_line:
+                entry += f"\n  {ud_line}"
+            lines.append(entry)
 
     respond(response_type="ephemeral", text="\n\n".join(lines))
 

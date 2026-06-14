@@ -740,6 +740,7 @@ def get_user_finished_predictions(conn: sqlite3.Connection, slack_user_id: str) 
                m.home_score, m.away_score,
                m.duration, m.penalties_home, m.penalties_away,
                m.et_home, m.et_away,
+               m.home_odds, m.draw_odds, m.away_odds,
                p.home_score AS pred_home, p.away_score AS pred_away, p.points
         FROM matches m
         JOIN predictions p ON p.match_id = m.id AND p.slack_user_id = ?
@@ -752,6 +753,7 @@ def get_user_upcoming_predictions(conn: sqlite3.Connection, slack_user_id: str) 
     """Return upcoming matches where the user has already submitted a prediction."""
     return conn.execute("""
         SELECT m.home_team, m.away_team, m.kickoff_utc, m.stage,
+               m.home_odds, m.draw_odds, m.away_odds,
                p.home_score AS pred_home, p.away_score AS pred_away
         FROM matches m
         JOIN predictions p ON p.match_id = m.id AND p.slack_user_id = ?

@@ -1,6 +1,7 @@
 from app import db
 from app.flags import home, away, vs
 from app.football import format_kickoff, format_score, is_kickoff_passed, stage_label, estimate_match_time
+from app.odds import format_prob_line, format_underdog_line
 
 
 def handle_fixtures(respond, body):
@@ -31,6 +32,12 @@ def handle_fixtures(respond, body):
                 f"*{home(m['home_team'])} {format_score(m)} {away(m['away_team'])}*"
                 f"  ·  {match_time}  ·  {stage_label(m['stage'])}"
             )
+            prob_line = format_prob_line(m)
+            if prob_line:
+                lines.append(prob_line)
+            ud_line = format_underdog_line(m)
+            if ud_line:
+                lines.append(ud_line)
 
             preds = live_preds.get(m["id"], [])
             predicted = [(r["slack_user_id"], r["home_score"], r["away_score"]) for r in preds if r["home_score"] is not None]
@@ -57,6 +64,12 @@ def handle_fixtures(respond, body):
                 f"*{vs(m['home_team'], m['away_team'])}*\n"
                 f"  :calendar: {format_kickoff(m['kickoff_utc'])}  ·  {stage_label(m['stage'])}"
             )
+            prob_line = format_prob_line(m)
+            if prob_line:
+                line += f"\n  {prob_line}"
+            ud_line = format_underdog_line(m, action=True)
+            if ud_line:
+                line += f"\n  {ud_line}"
             pred = user_preds.get(m["id"])
             if pred:
                 line += f"\n  :pencil:  Your pick: *{pred['home_score']} - {pred['away_score']}*"
