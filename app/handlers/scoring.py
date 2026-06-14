@@ -106,7 +106,7 @@ SCORING_BLOCKS = [
         "elements": [{
             "type": "mrkdwn",
             "text": (
-                ":lock: *Match predictions are locked once submitted.* "
+                ":lock: *Match predictions can be updated any time before kickoff — they lock when the match starts.* "
                 "Tournament picks can be updated until Matchday 2 begins on *18 Jun*."
             ),
         }],
