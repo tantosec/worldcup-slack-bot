@@ -1,6 +1,7 @@
 import logging
 import os
 import requests
+from datetime import datetime, timezone
 
 from app.fifa_rankings import get_rank
 from app.flags import flag
@@ -98,6 +99,8 @@ def fetch_and_store_odds(conn) -> None:
         updated += 1
 
     logger.info("Odds sync: updated %d matches", updated)
+    from app import db as _db
+    _db.set_last_odds_sync(conn)
 
 
 def odds_to_probs(home_odds: float, draw_odds: float, away_odds: float) -> tuple[int, int, int]:
@@ -127,6 +130,19 @@ def format_prob_line(match) -> str | None:
 
 
 _UNDERDOG_RATIO = 1.25  # favorite must be at least 25% more likely to win
+
+
+def sync_odds_if_stale(conn, max_age_minutes: int = 60) -> None:
+    """Fetch fresh odds only if last sync was more than max_age_minutes ago."""
+    from app import db as _db
+    last = _db.get_last_odds_sync(conn)
+    if last:
+        last_dt = datetime.fromisoformat(last).replace(tzinfo=timezone.utc)
+        age_minutes = (datetime.now(timezone.utc) - last_dt).total_seconds() / 60
+        if age_minutes < max_age_minutes:
+            logger.info("Odds still fresh (%.0f min old) — skipping sync", age_minutes)
+            return
+    fetch_and_store_odds(conn)
 
 
 def get_underdog(match) -> str | None:

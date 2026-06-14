@@ -56,6 +56,11 @@ def init_db():
                 away_odds       REAL
             );
 
+            CREATE TABLE IF NOT EXISTS odds_sync (
+                id            INTEGER PRIMARY KEY CHECK (id = 1),
+                last_synced_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS daily_wrap_sent (
                 match_date TEXT PRIMARY KEY
             );
@@ -760,3 +765,15 @@ def get_user_upcoming_predictions(conn: sqlite3.Connection, slack_user_id: str) 
         WHERE m.status IN ('SCHEDULED', 'TIMED')
         ORDER BY m.kickoff_utc ASC
     """, (slack_user_id,)).fetchall()
+
+
+def get_last_odds_sync(conn) -> str | None:
+    row = conn.execute("SELECT last_synced_at FROM odds_sync WHERE id = 1").fetchone()
+    return row["last_synced_at"] if row else None
+
+
+def set_last_odds_sync(conn) -> None:
+    conn.execute("""
+        INSERT INTO odds_sync (id, last_synced_at) VALUES (1, datetime('now'))
+        ON CONFLICT(id) DO UPDATE SET last_synced_at = datetime('now')
+    """)

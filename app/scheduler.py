@@ -4,7 +4,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app import db
 from app.flags import flag, home, away, vs
 from app.football import fetch_all_matches, fetch_top_scorer, format_kickoff, format_score, format_score_note, stage_label, estimate_match_time
-from app.odds import fetch_and_store_odds, format_prob_line, format_underdog_line
+from app.odds import fetch_and_store_odds, sync_odds_if_stale, format_prob_line, format_underdog_line
 from app.scoring import calculate_points, points_label, score_semi_picks, score_group_goals
 
 logger = logging.getLogger(__name__)
@@ -292,6 +292,7 @@ def send_kickoff_reminders(slack_client):
         return
 
     with db.db() as conn:
+        sync_odds_if_stale(conn, max_age_minutes=60)
         matches = db.get_matches_needing_reminder(conn)
 
     for match in matches:
