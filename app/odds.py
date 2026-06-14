@@ -126,13 +126,16 @@ def format_prob_line(match) -> str | None:
     return f":bar_chart: {flag(home)} {home} *{h_pct}%*  ·  Draw *{d_pct}%*  ·  {flag(away)} {away} *{a_pct}%*"
 
 
+_UNDERDOG_RATIO = 1.25  # favorite must be at least 25% more likely to win
+
+
 def get_underdog(match) -> str | None:
     """Return the underdog team name.
 
-    Primary: compare win probabilities from odds (draw excluded — irrelevant to
-    relative team strength). Only show underdog when gap >= 15 percentage points.
-    Tiebreaker: FIFA ranking gap >= 15 positions when odds are unavailable or gap
-    is too small to be meaningful.
+    Primary: win probability ratio from odds (draw excluded). The favorite must
+    be at least 1.25x more likely to win than the underdog — i.e. the bookmakers
+    consider them significantly less likely to win, not just marginally.
+    Fallback: FIFA ranking ratio when odds are unavailable.
     """
     h_odds = match["home_odds"]
     d_odds = match["draw_odds"]
@@ -140,17 +143,21 @@ def get_underdog(match) -> str | None:
 
     if h_odds and d_odds and a_odds:
         h_pct, _d_pct, a_pct = odds_to_probs(h_odds, d_odds, a_odds)
-        gap = abs(h_pct - a_pct)
-        if gap >= 15:
-            return match["home_team"] if h_pct < a_pct else match["away_team"]
-        # Gap too small — fall through to ranking tiebreaker
+        if h_pct > 0 and a_pct > 0:
+            if a_pct / h_pct >= _UNDERDOG_RATIO:
+                return match["home_team"]
+            if h_pct / a_pct >= _UNDERDOG_RATIO:
+                return match["away_team"]
+        return None
 
-    # Fallback: FIFA ranking (higher number = weaker team = underdog)
+    # Fallback: FIFA ranking ratio (higher number = weaker)
     home_rank = get_rank(match["home_team"])
     away_rank = get_rank(match["away_team"])
-    if abs(home_rank - away_rank) >= 15:
-        return match["home_team"] if home_rank > away_rank else match["away_team"]
-
+    if home_rank > 0 and away_rank > 0:
+        if home_rank / away_rank >= _UNDERDOG_RATIO:
+            return match["home_team"]
+        if away_rank / home_rank >= _UNDERDOG_RATIO:
+            return match["away_team"]
     return None
 
 
