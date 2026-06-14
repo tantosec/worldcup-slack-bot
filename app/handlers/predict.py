@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timezone
 
 from app import db
+from app.fifa_rankings import get_rank
 from app.flags import flag, home, away, vs
 from app.football import is_kickoff_passed, format_kickoff, stage_label
 
@@ -59,6 +60,14 @@ def _match_blocks(matches: list[dict]) -> list[dict]:
         pred_away = m.get("pred_away")
         has_pred = pred_home is not None and pred_away is not None
 
+        home_rank = get_rank(m["home_team"])
+        away_rank = get_rank(m["away_team"])
+        if home_rank != away_rank:
+            underdog = m["home_team"] if home_rank > away_rank else m["away_team"]
+            underdog_line = f"\n:zap: Upset pick: {flag(underdog)} {underdog} wins → *+2 bonus pts*"
+        else:
+            underdog_line = ""
+
         blocks.append({"type": "divider"})
         blocks.append({
             "type": "section",
@@ -68,6 +77,7 @@ def _match_blocks(matches: list[dict]) -> list[dict]:
                     f"*{vs(m['home_team'], m['away_team'])}*\n"
                     f":clock3: {format_kickoff(m['kickoff_utc'])}  ·  {stage_label(m['stage'])}"
                     + (f"  ·  _your pick: {pred_home} - {pred_away}_" if has_pred else "")
+                    + underdog_line
                 ),
             },
         })
