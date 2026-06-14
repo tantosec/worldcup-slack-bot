@@ -127,24 +127,30 @@ def format_prob_line(match) -> str | None:
 
 
 def get_underdog(match) -> str | None:
-    """Return the underdog team name. Uses odds if available, falls back to FIFA ranking."""
-    h_odds = match["home_odds"]
-    a_odds = match["away_odds"]
-    if h_odds and a_odds:
-        # Higher odds = less likely to win = underdog
-        if h_odds > a_odds:
-            return match["home_team"]
-        if a_odds > h_odds:
-            return match["away_team"]
-        return None
+    """Return the underdog team name.
 
-    # Fallback: FIFA ranking (higher rank number = worse team = underdog)
+    Primary: compare win probabilities from odds (draw excluded — irrelevant to
+    relative team strength). Only show underdog when gap >= 15 percentage points.
+    Tiebreaker: FIFA ranking gap >= 15 positions when odds are unavailable or gap
+    is too small to be meaningful.
+    """
+    h_odds = match["home_odds"]
+    d_odds = match["draw_odds"]
+    a_odds = match["away_odds"]
+
+    if h_odds and d_odds and a_odds:
+        h_pct, _d_pct, a_pct = odds_to_probs(h_odds, d_odds, a_odds)
+        gap = abs(h_pct - a_pct)
+        if gap >= 15:
+            return match["home_team"] if h_pct < a_pct else match["away_team"]
+        # Gap too small — fall through to ranking tiebreaker
+
+    # Fallback: FIFA ranking (higher number = weaker team = underdog)
     home_rank = get_rank(match["home_team"])
     away_rank = get_rank(match["away_team"])
-    if home_rank > away_rank:
-        return match["home_team"]
-    if away_rank > home_rank:
-        return match["away_team"]
+    if abs(home_rank - away_rank) >= 15:
+        return match["home_team"] if home_rank > away_rank else match["away_team"]
+
     return None
 
 
