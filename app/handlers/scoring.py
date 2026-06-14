@@ -8,53 +8,111 @@ from app.scoring import (
 _MAX_WILDCARD_WINNER = ZEBRA_POINTS["WINNER"] * ZEBRA_WILDCARD_MULTIPLIER
 _ORG = os.getenv("ORG_NAME", "TantoSec")
 
-SCORING_TEXT = (
-    f"*:soccer: {_ORG} World Cup 2026 — Scoring Rules*\n"
-    "\n"
-    "*Match Predictions*\n"
-    "  :dart: Exact score → *9 pts*\n"
-    "  :white_check_mark: Correct result (W/D/L) → *3 pts*\n"
-    "  :zap: Upset bonus → *+2 pts* _(predicted the underdog wins — and they did!)_\n"
-    "\n"
-    "  *How is the underdog determined?*\n"
-    "  Based on live bookmaker odds — the team the bookmakers think is\n"
-    "  significantly less likely to win, not just marginally. Specifically,\n"
-    "  the favourite must be at least 25% more likely to win than their\n"
-    "  opponent. When odds aren't available yet, FIFA rankings are used as\n"
-    "  a fallback with the same logic. A draw does *not* trigger the upset\n"
-    "  bonus — you need to predict the underdog wins outright.\n"
-    "\n"
-    "  *Knockout stage multipliers:*\n"
-    "  Round of 32 / Round of 16 → ×1.5\n"
-    "  Quarter-finals → ×2\n"
-    "  Semi-finals / 3rd Place → ×2.5\n"
-    "  :trophy: Final → ×3 _(exact score in the final = 27 pts!)_\n"
-    "\n"
-    f"*Tournament Picks* _(lock before Matchday 2 on 18 Jun)_\n"
-    f"  :first_place_medal: World Cup Winner → *{TOURNAMENT_PICK_POINTS} pts*\n"
-    f"  :athletic_shoe: Golden Boot (top scorer) → *{TOURNAMENT_PICK_POINTS} pts*\n"
-    f"  :four: Semi-finalists → *{SEMI_PICK_POINTS} pts each* ({SEMI_PICK_POINTS * 4} pts max)\n"
-    "\n"
-    f"*:goal_net: Group Stage Total Goals* _(optional)_\n"
-    f"  Guess total goals across all 72 group matches\n"
-    f"  Closest guess → *{GROUP_GOALS_WIN_POINTS} pts* · Within ±{GROUP_GOALS_NEAR_RANGE} → *{GROUP_GOALS_NEAR_POINTS} pts*\n"
-    "\n"
-    f"*:zebra_face: Zebra Pick* _(optional — pick an underdog)_\n"
-    f"  Round of 32 → *{ZEBRA_POINTS['LAST_32']} pts*\n"
-    f"  Round of 16 → *{ZEBRA_POINTS['LAST_16']} pts*\n"
-    f"  Quarter-finals → *{ZEBRA_POINTS['QUARTER_FINALS']} pts*\n"
-    f"  Semi-finals → *{ZEBRA_POINTS['SEMI_FINALS']} pts*\n"
-    f"  Final → *{ZEBRA_POINTS['FINAL']} pts*\n"
-    f"  Winner :fire: → *{ZEBRA_POINTS['WINNER']} pts*\n"
-    f"\n"
-    f"  ⭐ Bold ({len(ZEBRA_BOLD)} teams) — standard points\n"
-    f"  :black_joker: Wildcard ({len(ZEBRA_WILDCARD)} teams) — *×{ZEBRA_WILDCARD_MULTIPLIER} all points* "
-    f"_(up to {_MAX_WILDCARD_WINNER} pts if your zebra wins it all!)_\n"
-    "\n"
-    ":lock: *Match predictions are locked once submitted.* "
-    "Tournament picks can be updated until Matchday 2 begins on *18 Jun*."
-)
+SCORING_BLOCKS = [
+    {
+        "type": "header",
+        "text": {"type": "plain_text", "text": f"⚽ {_ORG} World Cup 2026 — Scoring Rules", "emoji": True},
+    },
+    {"type": "divider"},
+    {
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": (
+                "*Match Predictions*\n"
+                ":dart: Exact score → *9 pts*\n"
+                ":white_check_mark: Correct result (W/D/L) → *3 pts*\n"
+                ":zap: Upset bonus → *+2 pts* _(predicted the underdog wins — and they did!)_"
+            ),
+        },
+    },
+    {
+        "type": "context",
+        "elements": [{
+            "type": "mrkdwn",
+            "text": (
+                "*Underdog:* Bookmaker odds — favourite must be ≥25% more likely to win. "
+                "Falls back to FIFA rankings when odds aren't available. "
+                "A draw does *not* trigger the bonus."
+            ),
+        }],
+    },
+    {
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": (
+                "*Knockout multipliers*\n"
+                "R32 / R16 → ×1.5  ·  QF → ×2  ·  SF / 3rd → ×2.5  ·  :trophy: Final → ×3\n"
+                "_(exact score in the Final = 27 pts!)_"
+            ),
+        },
+    },
+    {"type": "divider"},
+    {
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": (
+                f"*Tournament Picks* _(lock before Matchday 2 on 18 Jun)_\n"
+                f":first_place_medal: World Cup Winner → *{TOURNAMENT_PICK_POINTS} pts*\n"
+                f":athletic_shoe: Golden Boot (top scorer) → *{TOURNAMENT_PICK_POINTS} pts*\n"
+                f":four: Semi-finalists → *{SEMI_PICK_POINTS} pts each* ({SEMI_PICK_POINTS * 4} pts max)"
+            ),
+        },
+    },
+    {"type": "divider"},
+    {
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": (
+                f"*:goal_net: Group Stage Total Goals* _(optional)_\n"
+                f"Guess total goals across all 72 group matches\n"
+                f"Closest → *{GROUP_GOALS_WIN_POINTS} pts*  ·  Within ±{GROUP_GOALS_NEAR_RANGE} → *{GROUP_GOALS_NEAR_POINTS} pts*"
+            ),
+        },
+    },
+    {"type": "divider"},
+    {
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": (
+                f"*:zebra_face: Zebra Pick* _(optional — pick an underdog)_\n"
+                f"R32 *{ZEBRA_POINTS['LAST_32']}*  ·  "
+                f"R16 *{ZEBRA_POINTS['LAST_16']}*  ·  "
+                f"QF *{ZEBRA_POINTS['QUARTER_FINALS']}*  ·  "
+                f"SF *{ZEBRA_POINTS['SEMI_FINALS']}*  ·  "
+                f"Final *{ZEBRA_POINTS['FINAL']}*  ·  "
+                f"Winner :fire: *{ZEBRA_POINTS['WINNER']}* pts"
+            ),
+        },
+    },
+    {
+        "type": "context",
+        "elements": [{
+            "type": "mrkdwn",
+            "text": (
+                f"⭐ Bold ({len(ZEBRA_BOLD)} teams) — standard points  ·  "
+                f":black_joker: Wildcard ({len(ZEBRA_WILDCARD)} teams) — *×{ZEBRA_WILDCARD_MULTIPLIER} all points* "
+                f"_(up to {_MAX_WILDCARD_WINNER} pts if your zebra wins it all!)_"
+            ),
+        }],
+    },
+    {"type": "divider"},
+    {
+        "type": "context",
+        "elements": [{
+            "type": "mrkdwn",
+            "text": (
+                ":lock: *Match predictions are locked once submitted.* "
+                "Tournament picks can be updated until Matchday 2 begins on *18 Jun*."
+            ),
+        }],
+    },
+]
 
 
 def handle_scoring(respond, body):
-    respond(SCORING_TEXT)
+    respond(response_type="ephemeral", blocks=SCORING_BLOCKS, text=f"{_ORG} World Cup 2026 — Scoring Rules")

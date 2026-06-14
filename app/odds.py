@@ -126,7 +126,7 @@ def format_prob_line(match) -> str | None:
     h_pct, d_pct, a_pct = odds_to_probs(h_odds, d_odds, a_odds)
     home = match["home_team"]
     away = match["away_team"]
-    return f":bar_chart: {flag(home)} {home} *{h_pct}%*  ·  Draw *{d_pct}%*  ·  {flag(away)} {away} *{a_pct}%*"
+    return f":bar_chart: Pre-match odds: {flag(home)} {home} *{h_pct}%*  ·  Draw *{d_pct}%*  ·  {flag(away)} {away} *{a_pct}%*"
 
 
 _UNDERDOG_RATIO = 1.25  # favorite must be at least 25% more likely to win

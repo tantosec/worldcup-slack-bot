@@ -10,12 +10,23 @@ from app.scoring import TOURNAMENT_PICK_POINTS, SEMI_PICK_POINTS
 logger = logging.getLogger(__name__)
 
 
+def _section(text: str) -> dict:
+    return {"type": "section", "text": {"type": "mrkdwn", "text": text}}
+
+
+def _context(text: str) -> dict:
+    return {"type": "context", "elements": [{"type": "mrkdwn", "text": text}]}
+
+
+def _divider() -> dict:
+    return {"type": "divider"}
+
+
 def handle_me(respond, body, client):
     caller_id = body["user_id"]
     text = (body.get("text") or "").strip()
     logger.info("/mystats called by %s with text: %r", caller_id, text)
 
-    # Parse optional @mention: <@U123456|username> or plain @username
     target_id = caller_id
     viewing_other = False
 
@@ -45,52 +56,52 @@ def handle_me(respond, body, client):
         finished_preds = db.get_user_finished_predictions(conn, target_id)
         upcoming_preds = [] if viewing_other else db.get_user_upcoming_predictions(conn, target_id)
 
-    header = f"<@{target_id}>" if viewing_other else "Your"
-    lines = [f":bar_chart: *{header} World Cup 2026 Stats*\n"]
-
-    # Rank + points split
+    header_name = f"<@{target_id}>'s" if viewing_other else "Your"
     match_pts = stats["match_points"] or 0
     tournament_pts = (total_points or 0) - match_pts
-    lines.append(
-        f":trophy: Rank *#{rank}* of {total_players}  ·  *{total_points} pts total*\n"
-        f"  Match pts: *{match_pts}*  ·  Tournament pts: *{tournament_pts}*"
-    )
 
-    # Tournament picks
-    lines.append("\n*━━━━━━━━━━━━━━━━━━━━*")
-    lines.append(":crystal_ball: *Tournament Picks*")
-    lines.append("*━━━━━━━━━━━━━━━━━━━━*\n")
+    blocks = [
+        {"type": "header", "text": {"type": "plain_text", "text": f"📊 {header_name} World Cup 2026 Stats", "emoji": True}},
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f":trophy: *Rank*\n#{rank} of {total_players}"},
+                {"type": "mrkdwn", "text": f"*Total*\n{total_points} pts"},
+                {"type": "mrkdwn", "text": f":soccer: *Match pts*\n{match_pts}"},
+                {"type": "mrkdwn", "text": f":crystal_ball: *Tournament pts*\n{tournament_pts}"},
+            ],
+        },
+    ]
+
+    # ── Tournament Picks ──────────────────────────────────────────────────────
+    blocks += [_divider(), _section("🔮  *Tournament Picks*")]
 
     if picks and (not viewing_other or picks_revealed):
-        _append_picks_lines(lines, picks, picks_locked)
+        blocks.append(_section(_picks_text(picks, picks_locked)))
     elif viewing_other and not picks_revealed:
-        lines.append("  _Picks are revealed after Matchday 2 locks._")
-    elif not picks:
-        lines.append("  _(not submitted yet)_")
+        blocks.append(_context("_Picks are revealed after Matchday 2 locks._"))
+    else:
+        blocks.append(_context("_(not submitted yet)_"))
 
-    # Match predictions
-    lines.append("\n*━━━━━━━━━━━━━━━━━━━━*")
+    # ── Match Predictions ─────────────────────────────────────────────────────
     count_str = f"{len(finished_preds)} played"
     if upcoming_preds:
         count_str += f"  ·  {len(upcoming_preds)} upcoming"
-    lines.append(f":soccer: *Match Predictions* ({count_str})")
-    lines.append("*━━━━━━━━━━━━━━━━━━━━*\n")
+    blocks += [_divider(), _section(f"⚽  *Match Predictions* ({count_str})")]
 
     if finished_preds:
+        pairs = []
         for p in finished_preds:
             actual = format_score(p) + format_score_note(p)
-            match_line = f"*{home(p['home_team'])} {actual} {away(p['away_team'])}*"
             pts = p["points"] or 0
             pred_str = f"{p['pred_home']} - {p['pred_away']}"
+
             if p["pred_home"] == p["home_score"] and p["pred_away"] == p["away_score"]:
                 icon = ":dart:"
-                result = "Exact score"
             elif pts > 0:
                 icon = ":white_check_mark:"
-                result = "Correct result"
             else:
                 icon = ":x:"
-                result = "Wrong"
 
             upset_flag = ""
             if pts > 0:
@@ -105,34 +116,43 @@ def handle_me(respond, body, client):
                         (underdog == p["away_team"] and p["pred_away"] > p["pred_home"])
                     )
                     if underdog_won and pred_underdog_wins:
-                        upset_flag = "  :zap: Upset!"
+                        upset_flag = "  :zap:"
 
-            lines.append(f"{match_line}\n  {icon} Picked {pred_str}  ·  {result}  ·  *+{pts} pts*{upset_flag}")
+            pairs.append((
+                f"{icon}  {home(p['home_team'])} {actual} {away(p['away_team'])}",
+                f"`{pred_str}`  *+{pts} pts*{upset_flag}",
+            ))
+
+        for i in range(0, len(pairs), 5):
+            chunk = pairs[i:i + 5]
+            fields = []
+            for left, right in chunk:
+                fields.append({"type": "mrkdwn", "text": left})
+                fields.append({"type": "mrkdwn", "text": right})
+            blocks.append({"type": "section", "fields": fields})
     else:
-        lines.append("  _No finished matches predicted yet._")
+        blocks.append(_context("_No finished matches predicted yet._"))
 
     if upcoming_preds:
-        lines.append("")
+        blocks += [_divider(), _section("⏰  *Upcoming*")]
         for p in upcoming_preds:
-            entry = (
+            blocks.append(_section(
                 f"*{vs(p['home_team'], p['away_team'])}*  ·  {format_kickoff(p['kickoff_utc'])}\n"
-                f"  :pencil: Your pick: *{p['pred_home']} - {p['pred_away']}*"
-            )
-            prob_line = format_prob_line(p)
-            if prob_line:
-                entry += f"\n  {prob_line}"
-            ud_line = format_underdog_line(p, action=True)
-            if ud_line:
-                entry += f"\n  {ud_line}"
-            lines.append(entry)
+                f":pencil: Your pick: *{p['pred_home']} - {p['pred_away']}*"
+            ))
+            context_parts = [x for x in [format_prob_line(p), format_underdog_line(p, action=True)] if x]
+            for part in context_parts:
+                blocks.append(_context(part))
 
-    respond(response_type="ephemeral", text="\n\n".join(lines))
+    respond(response_type="ephemeral", blocks=blocks, text=f"{header_name} World Cup 2026 Stats")
 
 
-def _append_picks_lines(lines: list, picks, locked: bool):
+def _picks_text(picks, locked: bool) -> str:
+    lines = []
+
     w = picks["winner"]
     w_pts = picks["winner_points"]
-    w_line = f"  :first_place_medal: Winner: *{flag(w)} {w}*"
+    w_line = f":first_place_medal: Winner: *{flag(w)} {w}*"
     if w_pts is not None:
         w_line += f"  → *{w_pts} pts*" if w_pts > 0 else "  → :x: 0 pts"
     else:
@@ -141,7 +161,7 @@ def _append_picks_lines(lines: list, picks, locked: bool):
 
     gs = picks["top_scorer"]
     s_pts = picks["scorer_points"]
-    s_line = f"  :athletic_shoe: Golden Boot: *{gs}*"
+    s_line = f":athletic_shoe: Golden Boot: *{gs}*"
     if s_pts is not None:
         s_line += f"  → *{s_pts} pts*" if s_pts > 0 else "  → :x: 0 pts"
     else:
@@ -152,19 +172,19 @@ def _append_picks_lines(lines: list, picks, locked: bool):
     if semis:
         semi_pts = picks["semi_points"]
         semi_str = "  ·  ".join(f"{flag(t)} {t}" for t in semis)
-        semi_line = f"  :four: Semis: {semi_str}"
+        semi_line = f":four: Semis: {semi_str}"
         if semi_pts is not None:
             semi_line += f"  → *{semi_pts} pts*"
         else:
             semi_line += f"  _(+{SEMI_PICK_POINTS} pts each if correct)_"
         lines.append(semi_line)
     else:
-        lines.append("  :four: Semis: _(not picked)_")
+        lines.append(":four: Semis: _(not picked)_")
 
     guess = picks["group_goals_guess"]
     if guess is not None:
         gg_pts = picks["group_goals_points"]
-        gg_line = f"  :goal_net: Group goals guess: *{guess}*"
+        gg_line = f":goal_net: Group goals guess: *{guess}*"
         if gg_pts is not None:
             gg_line += f"  → *{gg_pts} pts*" if gg_pts > 0 else "  → :x: 0 pts"
         else:
@@ -175,12 +195,14 @@ def _append_picks_lines(lines: list, picks, locked: bool):
     if zebra:
         tier_label = ":black_joker: Wildcard" if picks["zebra_tier"] == "WILDCARD" else "⭐ Bold"
         z_pts = picks["zebra_points"]
-        z_line = f"  :zebra_face: Zebra: *{flag(zebra)} {zebra}* ({tier_label})"
+        z_line = f":zebra_face: Zebra: *{flag(zebra)} {zebra}* ({tier_label})"
         if z_pts is not None:
             z_line += f"  → *{z_pts} pts*" if z_pts > 0 else "  → :x: 0 pts"
         else:
             z_line += "  _(pending)_"
         lines.append(z_line)
+
+    return "\n".join(lines)
 
 
 def _picks_locked(conn) -> bool:
@@ -190,7 +212,6 @@ def _picks_locked(conn) -> bool:
 
 
 def _lookup_user_by_name(client, username: str) -> str | None:
-    """Look up a Slack user ID by their username or display name."""
     try:
         resp = client.users_list()
         for member in resp.get("members", []):

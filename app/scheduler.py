@@ -10,6 +10,43 @@ from app.scoring import calculate_points, points_label, score_semi_picks, score_
 logger = logging.getLogger(__name__)
 
 
+# ─── Block Kit helpers ────────────────────────────────────────────────────────
+
+def _block_section(text: str) -> dict:
+    return {"type": "section", "text": {"type": "mrkdwn", "text": text}}
+
+
+def _block_context(text: str) -> dict:
+    return {"type": "context", "elements": [{"type": "mrkdwn", "text": text}]}
+
+
+def _block_divider() -> dict:
+    return {"type": "divider"}
+
+
+def _block_fields(pairs: list) -> list:
+    """Build section blocks with 2-column fields. Chunked at 5 pairs (10 fields) per block."""
+    blocks = []
+    for i in range(0, len(pairs), 5):
+        chunk = pairs[i:i + 5]
+        fields = []
+        for left, right in chunk:
+            fields.append({"type": "mrkdwn", "text": left})
+            fields.append({"type": "mrkdwn", "text": right})
+        blocks.append({"type": "section", "fields": fields})
+    return blocks
+
+
+def _post_attachment(slack_client, channel: str, fallback: str, color: str, blocks: list):
+    slack_client.chat_postMessage(
+        channel=channel,
+        text=fallback,
+        attachments=[{"color": color, "blocks": blocks}],
+    )
+
+
+# ─── Fixture sync ─────────────────────────────────────────────────────────────
+
 def sync_fixtures():
     """Pull all WC matches from football-data.org and upsert into DB."""
     logger.info("Syncing fixtures…")
@@ -25,6 +62,8 @@ def sync_fixtures():
             db.upsert_match(conn, m)
     logger.info("Synced %d matches (%d skipped — TBD teams)", len(matches) - skipped, skipped)
 
+
+# ─── Match scoring ────────────────────────────────────────────────────────────
 
 def score_finished_matches(slack_client=None):
     """Find finished unscored matches, calculate points, DM each predictor."""
@@ -67,93 +106,134 @@ def score_finished_matches(slack_client=None):
             db.mark_match_scored(conn, match["id"])
 
 
-def _post_result_summary(slack_client, match, results: list[tuple[str, int, int, int]], leaderboard=None):
-    """Post match result to channel with each user's prediction and top 10 leaderboard."""
+def _post_result_summary(slack_client, match, results: list, leaderboard=None):
     channel = os.getenv("RESULTS_CHANNEL")
     if not channel:
         return
 
     results_sorted = sorted(results, key=lambda r: r[3], reverse=True)
     duration = match["duration"] or "REGULAR"
-    ft_label = ":checkered_flag: *Full Time*"
+
+    ft_label = "🏁  *FULL TIME*"
     if duration == "PENALTY_SHOOTOUT":
-        ft_label = ":checkered_flag: *Full Time* _(Penalties)_"
+        ft_label = "🏁  *FULL TIME*  _(Penalties)_"
     elif duration == "EXTRA_TIME":
-        ft_label = ":checkered_flag: *Full Time* _(AET)_"
+        ft_label = "🏁  *FULL TIME*  _(AET)_"
 
-    lines = [
-        f"{ft_label}  ·  {stage_label(match['stage'])}",
-        f"*{home(match['home_team'])} {format_score(match)} {away(match['away_team'])}{format_score_note(match)}*",
+    score_text = (
+        f"*{home(match['home_team'])} {format_score(match)} {away(match['away_team'])}*\n"
+        f"{stage_label(match['stage'])}"
+    )
+
+    blocks = [
+        _block_section(ft_label),
+        _block_divider(),
+        _block_section(score_text),
     ]
+
     prob_line = format_prob_line(match)
-    if prob_line:
-        lines.append(prob_line)
     ud_line = format_underdog_line(match)
+    if prob_line:
+        blocks.append(_block_context(prob_line))
     if ud_line:
-        lines.append(ud_line)
-    lines += ["", ":bar_chart: *Predictions:*"]
+        blocks.append(_block_context(ud_line))
 
-    for user_id, pred_home, pred_away, pts in results_sorted:
-        pred_str = f"{pred_home} - {pred_away}"
-        if pts > 0 and pred_home == match["home_score"] and pred_away == match["away_score"]:
-            icon = ":dart:"
-        elif pts > 0:
-            icon = ":white_check_mark:"
-        else:
-            icon = ":x:"
-        lines.append(f"  {icon} <@{user_id}>  `{pred_str}`  —  *{points_label(pts)}*")
+    blocks.append(_block_divider())
+    blocks.append(_block_section("🔮  *Predictions*"))
 
-    if not results:
-        lines.append("  _(no predictions were made for this match)_")
+    if results_sorted:
+        pred_pairs = []
+        for user_id, pred_home, pred_away, pts in results_sorted:
+            pred_str = f"{pred_home} - {pred_away}"
+            if pts > 0 and pred_home == match["home_score"] and pred_away == match["away_score"]:
+                icon = ":dart:"
+                label = "Exact!"
+            elif pts > 0:
+                icon = ":white_check_mark:"
+                label = "Correct"
+            else:
+                icon = ":x:"
+                label = "Wrong"
+            pred_pairs.append((
+                f"{icon}  <@{user_id}>  `{pred_str}`  {label}",
+                f"*{points_label(pts)}*",
+            ))
+        blocks.extend(_block_fields(pred_pairs))
+    else:
+        blocks.append(_block_section("_(no predictions were made for this match)_"))
 
     if leaderboard:
-        lines.append("")
-        lines.append(":trophy: *Leaderboard*")
+        blocks.append(_block_divider())
+        blocks.append(_block_section("🏆  *Leaderboard*"))
         medals = {1: ":first_place_medal:", 2: ":second_place_medal:", 3: ":third_place_medal:"}
+        lb_pairs = []
         for i, row in enumerate(leaderboard[:10], start=1):
             medal = medals.get(i, f"`{i}.`")
-            lines.append(f"  {medal} <@{row['slack_user_id']}>  —  *{row['total_points']} pts*")
+            lb_pairs.append((
+                f"{medal}  <@{row['slack_user_id']}>",
+                f"*{row['total_points']} pts*",
+            ))
+        blocks.extend(_block_fields(lb_pairs))
 
-    slack_client.chat_postMessage(channel=channel, text="\n".join(lines))
+    _post_attachment(
+        slack_client, channel,
+        f"Full Time: {match['home_team']} {format_score(match)} {match['away_team']}",
+        "#2e7d32", blocks,
+    )
 
 
 def _dm_points_earned(slack_client, user_id: str, match, pred_home: int, pred_away: int, pts: int):
-    """DM a user their points after a match is scored."""
     actual = format_score(match) + format_score_note(match)
     predicted = f"{pred_home} - {pred_away}"
+    duration = match["duration"] or "REGULAR"
 
     if pts == 0:
-        result_line = f":x: *{predicted}* — no points this time"
+        result_icon = ":x:"
+        result_text = f"Picked `{predicted}` — no points this time"
     elif pred_home == match["home_score"] and pred_away == match["away_score"]:
-        result_line = f":dart: *{predicted}* — exact score!"
+        result_icon = ":dart:"
+        result_text = f"Picked `{predicted}` — exact score!"
     else:
-        result_line = f":white_check_mark: *{predicted}* — correct result"
+        result_icon = ":white_check_mark:"
+        result_text = f"Picked `{predicted}` — correct result"
+
+    extra_notes = []
+    if match["stage"] != "GROUP_STAGE":
+        mult = _stage_multiplier_label(match["stage"])
+        extra_notes.append(f"×{mult} {stage_label(match['stage'])} multiplier")
+    if duration == "PENALTY_SHOOTOUT":
+        extra_notes.append("went to penalties")
+    elif duration == "EXTRA_TIME":
+        extra_notes.append("AET")
 
     with db.db() as conn:
         rank, total = db.get_user_rank_and_total(conn, user_id)
-
     rank_txt = f"#{rank}" if rank else "—"
-    stage_txt = stage_label(match["stage"])
-    multiplier_note = f" _(×{_stage_multiplier_label(match['stage'])} {stage_txt})_" if match["stage"] != "GROUP_STAGE" else ""
-    duration = match["duration"] or "REGULAR"
-    if duration == "PENALTY_SHOOTOUT":
-        multiplier_note += " _(went to penalties)_"
-    elif duration == "EXTRA_TIME":
-        multiplier_note += " _(AET)_"
+
+    blocks = [
+        _block_section(
+            f"⚽  *{home(match['home_team'])} {actual} {away(match['away_team'])}*"
+        ),
+        _block_divider(),
+        _block_section(f"{result_icon}  {result_text}"),
+    ]
+    if extra_notes:
+        blocks.append(_block_context("_" + "  ·  ".join(extra_notes) + "_"))
+    blocks.append(_block_context(
+        f"*{points_label(pts)}* earned  ·  *{total} pts* total  ·  Rank *{rank_txt}*"
+    ))
 
     try:
         slack_client.chat_postMessage(
             channel=user_id,
-            text=(
-                f":checkered_flag: *{home(match['home_team'])} {actual} {away(match['away_team'])}*\n"
-                f"Your prediction: {result_line}{multiplier_note}\n"
-                f"Points earned: *{points_label(pts)}*\n"
-                f"Your total: *{total} pts*  ·  Rank *{rank_txt}*"
-            ),
+            text=f"Full Time: {match['home_team']} {actual} {match['away_team']} — {points_label(pts)}",
+            blocks=blocks,
         )
     except Exception as exc:
         logger.error("Failed to DM %s: %s", user_id, exc)
 
+
+# ─── Goal notifications ───────────────────────────────────────────────────────
 
 def send_goal_notifications(slack_client):
     """Post a goal alert whenever the live score changes."""
@@ -181,7 +261,6 @@ def send_goal_notifications(slack_client):
         new_away = curr_away - prev_away
         new_total = new_home + new_away
 
-        # Build header
         scoring_teams = []
         if new_home > 0:
             scoring_teams.append(f"{flag(match['home_team'])} {match['home_team']}")
@@ -189,25 +268,31 @@ def send_goal_notifications(slack_client):
             scoring_teams.append(f"{flag(match['away_team'])} {match['away_team']}")
 
         if new_total == 1:
-            header = f":rotating_light: *GOAAAAAL! {scoring_teams[0]} scores!*"
+            header_text = f":soccer:  *GOOOOOOOAAAALLLLL!*\n{scoring_teams[0]} scores!"
         elif len(scoring_teams) == 1:
-            header = f":rotating_light: *GOALS! {scoring_teams[0]} scores {new_total}!*"
+            header_text = f":soccer:  *GOOOOOOOAAAALLLLL!*\n{scoring_teams[0]} scores {new_total}!"
         else:
-            header = f":rotating_light: *GOALS! {'  ·  '.join(scoring_teams)} both score!*"
+            header_text = f":soccer:  *GOALS!*\n{'  ·  '.join(scoring_teams)} both score!"
 
         match_time = estimate_match_time(match["kickoff_utc"], match["status"])
-        lines = [
-            header,
-            f"*{home(match['home_team'])} {curr_home} - {curr_away} {away(match['away_team'])}*  ·  _{match_time}_",
-        ]
-        prob_line = format_prob_line(match)
-        if prob_line:
-            lines.append(prob_line)
-        ud_line = format_underdog_line(match)
-        if ud_line:
-            lines.append(ud_line)
+        score_text = (
+            f"*{home(match['home_team'])} {curr_home} - {curr_away} {away(match['away_team'])}*"
+            f"  ·  _{match_time}_"
+        )
 
-        # Show who is currently scoring points at this live score
+        blocks = [
+            _block_section(header_text),
+            _block_divider(),
+            _block_section(score_text),
+        ]
+
+        prob_line = format_prob_line(match)
+        ud_line = format_underdog_line(match)
+        if prob_line:
+            blocks.append(_block_context(prob_line))
+        if ud_line:
+            blocks.append(_block_context(ud_line))
+
         with db.db() as conn:
             preds = db.get_match_predictions_all_users(conn, match["id"])
 
@@ -227,18 +312,30 @@ def send_goal_notifications(slack_client):
                 scorers.append((icon, p["slack_user_id"], p["home_score"], p["away_score"], pts))
 
         if scorers:
-            lines.append("")
-            lines.append(":crystal_ball: *Scoring points right now:*")
-            for icon, user_id, ph, pa, pts in sorted(scorers, key=lambda x: -x[4]):
-                lines.append(f"  {icon} <@{user_id}>  `{ph} - {pa}`  —  *+{points_label(pts)}*")
+            blocks.append(_block_divider())
+            blocks.append(_block_section("🔮  *Scoring right now*"))
+            scorer_pairs = [
+                (
+                    f"{icon}  <@{uid}>  `{ph} - {pa}`",
+                    f"*+{points_label(pts)}*",
+                )
+                for icon, uid, ph, pa, pts in sorted(scorers, key=lambda x: -x[4])
+            ]
+            blocks.extend(_block_fields(scorer_pairs))
 
         try:
-            slack_client.chat_postMessage(channel=channel, text="\n".join(lines))
+            _post_attachment(
+                slack_client, channel,
+                f"Goal! {match['home_team']} {curr_home} - {curr_away} {match['away_team']}",
+                "#f4c430", blocks,
+            )
             with db.db() as conn:
                 db.mark_score_notified(conn, match["id"], curr_home, curr_away)
         except Exception as exc:
             logger.error("Failed to post goal notification for match %s: %s", match["id"], exc)
 
+
+# ─── Kickoff announcements ────────────────────────────────────────────────────
 
 def send_kickoff_announcements(slack_client):
     """Post all predictions to channel when a match kicks off."""
@@ -254,37 +351,55 @@ def send_kickoff_announcements(slack_client):
             all_preds = db.get_match_predictions_all_users(conn, match["id"])
             enrolled = db.get_enrolled_users(conn)
 
-        lines = [
-            f":soccer: *Kickoff!*  ·  {stage_label(match['stage'])}",
-            f"*{vs(match['home_team'], match['away_team'])}*",
-            f":calendar: {format_kickoff(match['kickoff_utc'])}",
+        blocks = [
+            _block_section("⚽  *KICKOFF!*"),
+            _block_divider(),
+            _block_section(
+                f"*{vs(match['home_team'], match['away_team'])}*\n"
+                f"{stage_label(match['stage'])}  ·  {format_kickoff(match['kickoff_utc'])}"
+            ),
         ]
+
         prob_line = format_prob_line(match)
-        if prob_line:
-            lines.append(prob_line)
         ud_line = format_underdog_line(match, action=True)
+        if prob_line:
+            blocks.append(_block_context(prob_line))
         if ud_line:
-            lines.append(ud_line)
-        lines += ["", ":bar_chart: *Predictions:*"]
+            blocks.append(_block_context(ud_line))
+
+        blocks.append(_block_divider())
+        blocks.append(_block_section("🔮  *Predictions*"))
 
         predicted_ids = {p["slack_user_id"] for p in all_preds if p["home_score"] is not None}
+        pred_pairs = [
+            (f"<@{p['slack_user_id']}>", f"`{p['home_score']} - {p['away_score']}`")
+            for p in all_preds if p["home_score"] is not None
+        ]
 
-        for p in all_preds:
-            if p["home_score"] is not None:
-                lines.append(f"  <@{p['slack_user_id']}>  `{p['home_score']} - {p['away_score']}`")
+        if pred_pairs:
+            blocks.extend(_block_fields(pred_pairs))
+        else:
+            blocks.append(_block_section("_(no predictions made)_"))
 
         no_pred = [u["slack_user_id"] for u in enrolled if u["slack_user_id"] not in predicted_ids]
         if no_pred:
-            lines.append("")
-            lines.append(":x: No prediction: " + "  ".join(f"<@{u}>" for u in no_pred))
+            blocks.append(_block_context(
+                ":x: No pick: " + "  ".join(f"<@{u}>" for u in no_pred)
+            ))
 
         try:
-            slack_client.chat_postMessage(channel=channel, text="\n".join(lines))
+            _post_attachment(
+                slack_client, channel,
+                f"Kickoff: {match['home_team']} vs {match['away_team']}",
+                "#1565c0", blocks,
+            )
             with db.db() as conn:
                 db.mark_kickoff_announced(conn, match["id"])
         except Exception as exc:
             logger.error("Failed to post kickoff announcement: %s", exc)
 
+
+# ─── Kickoff reminders ────────────────────────────────────────────────────────
 
 def send_kickoff_reminders(slack_client):
     """Post a channel reminder ~1 hour before kickoff, tagging unpredicted users."""
@@ -300,32 +415,45 @@ def send_kickoff_reminders(slack_client):
         with db.db() as conn:
             unpredicted = db.get_unpredicted_enrolled_users(conn, match["id"])
 
-        lines = [
-            f":alarm_clock: *Kickoff in ~1 hour!*",
-            f"*{vs(match['home_team'], match['away_team'])}*",
-            f":calendar: {format_kickoff(match['kickoff_utc'])}  ·  {stage_label(match['stage'])}",
+        blocks = [
+            _block_section("⏰  *KICKOFF IN ~1 HOUR*"),
+            _block_divider(),
+            _block_section(
+                f"*{vs(match['home_team'], match['away_team'])}*\n"
+                f"{stage_label(match['stage'])}  ·  {format_kickoff(match['kickoff_utc'])}"
+            ),
         ]
+
         prob_line = format_prob_line(match)
-        if prob_line:
-            lines.append(prob_line)
         ud_line = format_underdog_line(match, action=True)
+        if prob_line:
+            blocks.append(_block_context(prob_line))
         if ud_line:
-            lines.append(ud_line)
+            blocks.append(_block_context(ud_line))
+
+        blocks.append(_block_divider())
 
         if unpredicted:
             mentions = "  ".join(f"<@{u}>" for u in unpredicted)
-            lines.append(f"\n{mentions}")
-            lines.append("Haven't predicted yet — use `/predict`!")
+            blocks.append(_block_section(
+                f"🔔  {mentions}\nHaven't predicted yet — use `/predict` before kickoff! 🔒"
+            ))
         else:
-            lines.append(":white_check_mark: All predictions are in!")
+            blocks.append(_block_section(":white_check_mark:  All predictions are in!"))
 
         try:
-            slack_client.chat_postMessage(channel=channel, text="\n".join(lines))
+            _post_attachment(
+                slack_client, channel,
+                f"Kickoff reminder: {match['home_team']} vs {match['away_team']} in ~1 hour",
+                "#f9a825", blocks,
+            )
             with db.db() as conn:
                 db.mark_reminder_sent(conn, match["id"])
         except Exception as exc:
             logger.error("Failed to post kickoff reminder: %s", exc)
 
+
+# ─── Matchday wrap ────────────────────────────────────────────────────────────
 
 def send_matchday_wrap(slack_client):
     """Post an end-of-day summary once all matches on a given date are scored."""
@@ -347,29 +475,47 @@ def send_matchday_wrap(slack_client):
             for m in matches
         )
 
-        lines = [f":soccer: *Matchday Wrap — {match_date}*", ""]
+        results_text = "\n".join(
+            f"{home(m['home_team'])} *{m['home_score']} - {m['away_score']}* {away(m['away_team'])}"
+            for m in matches
+        )
 
-        for m in matches:
-            lines.append(
-                f"  {home(m['home_team'])} *{m['home_score']} - {m['away_score']}* {away(m['away_team'])}"
-            )
-
-        lines.append(f"\n:goal_net: *{total_goals} goals* across {len(matches)} match{'es' if len(matches) != 1 else ''}")
+        blocks = [
+            _block_section(f"📅  *MATCHDAY WRAP  ·  {match_date}*"),
+            _block_divider(),
+            _block_section(results_text),
+            _block_context(
+                f":goal_net: *{total_goals} goals* across "
+                f"*{len(matches)}* match{'es' if len(matches) != 1 else ''}"
+            ),
+        ]
 
         if top_earners:
-            lines.append("\n:bar_chart: *Top earners today:*")
+            blocks.append(_block_divider())
+            blocks.append(_block_section("⭐  *Top earners today*"))
             medals = [":first_place_medal:", ":second_place_medal:", ":third_place_medal:"]
-            for i, row in enumerate(top_earners):
-                medal = medals[i] if i < len(medals) else "  "
-                lines.append(f"  {medal} <@{row['slack_user_id']}> — *{row['day_pts']} pts*")
+            earn_pairs = [
+                (
+                    f"{medals[i] if i < len(medals) else f'`{i+1}.`'}  <@{row['slack_user_id']}>",
+                    f"*+{row['day_pts']} pts*",
+                )
+                for i, row in enumerate(top_earners)
+            ]
+            blocks.extend(_block_fields(earn_pairs))
 
         try:
-            slack_client.chat_postMessage(channel=channel, text="\n".join(lines))
+            _post_attachment(
+                slack_client, channel,
+                f"Matchday Wrap — {match_date}",
+                "#6a1b9a", blocks,
+            )
             with db.db() as conn:
                 db.mark_wrap_sent(conn, match_date)
         except Exception as exc:
             logger.error("Failed to post matchday wrap for %s: %s", match_date, exc)
 
+
+# ─── Picks reveal ─────────────────────────────────────────────────────────────
 
 def post_picks_reveal(slack_client, force: bool = False):
     """Post everyone's tournament picks to the channel once picks are locked."""
@@ -389,48 +535,63 @@ def post_picks_reveal(slack_client, force: bool = False):
             return
         db.mark_picks_reveal_sent(conn)
 
-    lines = [
-        ":lock: *Tournament picks are locked! Here's what everyone chose:*",
-        "",
+    blocks = [
+        _block_section("🔒  *Tournament picks are locked!*\nHere's what everyone chose:"),
+        _block_divider(),
     ]
 
     for p in picks:
-        user_lines = [f"<@{p['slack_user_id']}>"]
+        pick_lines = [f"*<@{p['slack_user_id']}>*"]
 
         if p["winner"]:
-            user_lines.append(f"  :first_place_medal: Winner: *{flag(p['winner'])} {p['winner']}*")
+            pick_lines.append(f":first_place_medal: Winner: *{flag(p['winner'])} {p['winner']}*")
         if p["top_scorer"]:
-            user_lines.append(f"  :athletic_shoe: Golden Boot: *{p['top_scorer']}*")
+            pick_lines.append(f":athletic_shoe: Golden Boot: *{p['top_scorer']}*")
 
         semis = [p[f"semi{i}"] for i in range(1, 5) if p[f"semi{i}"]]
         if semis:
-            semi_str = "  ·  ".join(f"{flag(s)} {s}" for s in semis)
-            user_lines.append(f"  :four: Semis: {semi_str}")
+            pick_lines.append(":four: Semis: " + "  ·  ".join(f"{flag(s)} {s}" for s in semis))
 
         if p["group_goals_guess"] is not None:
-            user_lines.append(f"  :goal_net: Group goals: *{p['group_goals_guess']}*")
+            pick_lines.append(f":goal_net: Group goals: *{p['group_goals_guess']}*")
 
         if p["zebra"]:
             tier = ":black_joker: Wildcard" if p["zebra_tier"] == "WILDCARD" else "⭐ Bold"
-            user_lines.append(f"  :zebra_face: Zebra: *{flag(p['zebra'])} {p['zebra']}* ({tier})")
+            pick_lines.append(f":zebra_face: Zebra: *{flag(p['zebra'])} {p['zebra']}* ({tier})")
 
-        lines.append("\n".join(user_lines))
+        blocks.append(_block_section("\n".join(pick_lines)))
 
     try:
-        slack_client.chat_postMessage(channel=channel, text="\n\n".join(lines))
+        _post_attachment(
+            slack_client, channel,
+            "Tournament picks are locked!",
+            "#1e88e5", blocks,
+        )
         logger.info("Picks reveal posted")
     except Exception as exc:
         logger.error("Failed to post picks reveal: %s", exc)
 
 
+# ─── Phase wrap ───────────────────────────────────────────────────────────────
+
 _PHASE_HEADERS = {
-    "GROUP_STAGE":    ":soccer: *Group Stage Complete!*",
-    "LAST_32":        ":checkered_flag: *Round of 32 Complete!*",
-    "LAST_16":        ":checkered_flag: *Round of 16 Complete!*",
-    "QUARTER_FINALS": ":fire: *Quarter-finals Complete!*",
-    "SEMI_FINALS":    ":star2: *Semi-finals Complete!*",
-    "THIRD_PLACE":    ":third_place_medal: *3rd Place Match Result*",
-    "FINAL":          ":trophy: *World Cup 2026 — It's All Over!*",
+    "GROUP_STAGE":    ":soccer:  *Group Stage Complete!*",
+    "LAST_32":        ":checkered_flag:  *Round of 32 Complete!*",
+    "LAST_16":        ":checkered_flag:  *Round of 16 Complete!*",
+    "QUARTER_FINALS": ":fire:  *Quarter-finals Complete!*",
+    "SEMI_FINALS":    ":star2:  *Semi-finals Complete!*",
+    "THIRD_PLACE":    ":third_place_medal:  *3rd Place Match Result*",
+    "FINAL":          ":trophy:  *World Cup 2026 — It's All Over!*",
+}
+
+_PHASE_COLORS = {
+    "GROUP_STAGE":    "#7b1fa2",
+    "LAST_32":        "#1565c0",
+    "LAST_16":        "#00838f",
+    "QUARTER_FINALS": "#e65100",
+    "SEMI_FINALS":    "#f9a825",
+    "THIRD_PLACE":    "#78909c",
+    "FINAL":          "#c8a400",
 }
 
 _NEXT_PHASE_LABEL = {
@@ -458,69 +619,89 @@ def send_phase_wrap(slack_client):
             leaderboard = db.get_leaderboard(conn)
             upcoming_stages = db.get_upcoming_stages(conn)
 
-        lines = [_PHASE_HEADERS.get(stage, f":checkered_flag: *{stage_label(stage)} Complete!*"), ""]
+        header_text = _PHASE_HEADERS.get(stage, f":checkered_flag:  *{stage_label(stage)} Complete!*")
+        color = _PHASE_COLORS.get(stage, "#555555")
 
-        # Results section — list individually for knockouts, summary only for group stage
+        blocks = [
+            _block_section(header_text),
+            _block_divider(),
+        ]
+
         is_group = stage == "GROUP_STAGE"
         if is_group:
             total = stats["match_count"] or 0
             goals = stats["total_goals"] or 0
             draws = stats["draws"] or 0
             avg = round(goals / total, 1) if total else 0
-            lines.append(f":bar_chart: *{total} matches  ·  {goals} goals  ·  {avg} per game  ·  {draws} draws*")
+            blocks.append(_block_section(
+                f"*{total} matches*  ·  *{goals} goals*  ·  *{avg} per game*  ·  *{draws} draws*"
+            ))
         else:
-            lines.append("*Results:*")
+            result_lines = []
             for m in matches:
                 advance = _advance_note(m)
-                lines.append(
-                    f"  {home(m['home_team'])} *{format_score(m)}* {away(m['away_team'])}{format_score_note(m)}{advance}"
+                result_lines.append(
+                    f"{home(m['home_team'])} *{format_score(m)}* {away(m['away_team'])}"
+                    f"{format_score_note(m)}{advance}"
                 )
+            blocks.append(_block_section("\n".join(result_lines)))
 
-        # Full leaderboard
-        lines.append("")
+        blocks.append(_block_divider())
+
         if stage == "FINAL":
-            lines.append(":trophy: *Final Standings — World Cup 2026 Prediction League*")
+            blocks.append(_block_section(":trophy:  *Final Standings — World Cup 2026 Prediction League*"))
         else:
-            lines.append(":bar_chart: *Leaderboard*")
+            blocks.append(_block_section(":bar_chart:  *Leaderboard*"))
 
         medals = {1: ":first_place_medal:", 2: ":second_place_medal:", 3: ":third_place_medal:"}
+        lb_pairs = []
         for i, row in enumerate(leaderboard, start=1):
             medal = medals.get(i, f"`{i}.`")
             exact = row["exact_scores"] or 0
-            lines.append(
-                f"  {medal} <@{row['slack_user_id']}>  —  *{row['total_points']} pts*"
-                f"  ·  :dart: {exact} exact"
-            )
+            lb_pairs.append((
+                f"{medal}  <@{row['slack_user_id']}>",
+                f"*{row['total_points']} pts*  ·  :dart: {exact} exact",
+            ))
+        blocks.extend(_block_fields(lb_pairs))
 
-        # Next phase callout
         if stage == "FINAL":
             if leaderboard:
                 winner_row = leaderboard[0]
-                lines.append(
-                    f"\n:confetti_ball: Congratulations <@{winner_row['slack_user_id']}> — "
+                blocks.append(_block_section(
+                    f":confetti_ball: Congratulations <@{winner_row['slack_user_id']}> — "
                     f"*{winner_row['total_points']} pts*! :trophy:"
-                )
-            lines.append("\nThanks for playing — see you at the next one! :soccer:")
+                ))
+            blocks.append(_block_section("Thanks for playing — see you at the next one! :soccer:"))
         else:
             next_label = _NEXT_PHASE_LABEL.get(stage)
-            has_next_fixtures = any(
-                s != stage for s in upcoming_stages
-            ) if upcoming_stages else False
+            has_next_fixtures = any(s != stage for s in upcoming_stages) if upcoming_stages else False
 
             if next_label and has_next_fixtures:
-                lines.append(f"\n:bell: *{next_label} predictions are now live!*")
-                lines.append("Use `/predict` to lock in your picks before the first match kicks off.")
+                blocks.append(_block_divider())
+                blocks.append(_block_section(
+                    f":bell:  *{next_label} predictions are now live!*\n"
+                    f"Use `/predict` to lock in your picks before the first match kicks off."
+                ))
             elif next_label:
-                lines.append(f"\n:hourglass: *{next_label} fixtures coming soon* — check back shortly!")
+                blocks.append(_block_divider())
+                blocks.append(_block_section(
+                    f":hourglass:  *{next_label} fixtures coming soon* — check back shortly!"
+                ))
 
         try:
-            slack_client.chat_postMessage(channel=channel, text="\n".join(lines))
+            _post_attachment(
+                slack_client, channel,
+                f"{stage_label(stage)} Complete!",
+                color, blocks,
+            )
             with db.db() as conn:
                 db.mark_phase_wrap_sent(conn, stage)
             logger.info("Phase wrap posted for %s", stage)
         except Exception as exc:
             logger.error("Failed to post phase wrap for %s: %s", stage, exc)
 
+
+# ─── Tournament scoring jobs ──────────────────────────────────────────────────
 
 _STAGE_DEPTH = {
     "LAST_32": 1, "LAST_16": 2, "QUARTER_FINALS": 3,
@@ -529,10 +710,6 @@ _STAGE_DEPTH = {
 
 
 def _team_furthest_stage(matches) -> str | None:
-    """
-    Given a team's finished knockout matches, return the stage key for scoring:
-    WINNER if they won the final, otherwise the deepest stage they appeared in.
-    """
     from app.scoring import ZEBRA_POINTS
     best = None
     won_final = False
@@ -541,20 +718,13 @@ def _team_furthest_stage(matches) -> str | None:
         if best is None or depth > _STAGE_DEPTH.get(best, 0):
             best = m["stage"]
         if m["stage"] == "FINAL":
-            team_won = (
-                (m["winner"] == "HOME_TEAM" and m["home_team"] == m["home_team"]) or
-                (m["winner"] == "AWAY_TEAM" and m["away_team"] == m["away_team"])
-            )
-            # determine which side this team was on
-            won_final = m["winner"] is not None  # refined below per-pick
-    # Return the best ZEBRA_POINTS key or None if team didn't make it past groups
+            won_final = m["winner"] is not None
     if best == "FINAL" and won_final:
-        return "WINNER"  # caller checks actual winner separately
+        return "WINNER"
     return best if best in ZEBRA_POINTS or best == "FINAL" else None
 
 
 def _team_furthest_stage_for(team_name: str, matches) -> str | None:
-    """Return the ZEBRA_POINTS key for how far team_name progressed."""
     from app.scoring import ZEBRA_POINTS
     best_depth = 0
     best_stage = None
@@ -574,12 +744,11 @@ def _team_furthest_stage_for(team_name: str, matches) -> str | None:
     if best_stage == "FINAL" and won_final:
         return "WINNER"
     if best_stage == "THIRD_PLACE":
-        return "SEMI_FINALS"  # THIRD_PLACE not in ZEBRA_POINTS, treat as semi
+        return "SEMI_FINALS"
     return best_stage if best_stage in ZEBRA_POINTS else None
 
 
 def score_winner_picks_job():
-    """Score tournament winner picks once the FINAL is complete."""
     from app.scoring import TOURNAMENT_PICK_POINTS
     with db.db() as conn:
         if db.winner_picks_already_scored(conn):
@@ -595,11 +764,6 @@ def score_winner_picks_job():
 
 
 def score_zebra_picks_job():
-    """
-    Score zebra picks progressively — runs every poll cycle and updates
-    each user's zebra_points based on how far their team has gone so far.
-    Skips users whose zebra team hasn't entered the knockout stage yet.
-    """
     from app.scoring import zebra_points as calc_zebra_pts
     with db.db() as conn:
         picks = db.get_all_tournament_picks(conn)
@@ -620,7 +784,6 @@ def score_zebra_picks_job():
 
 
 def score_semi_picks_job():
-    """Score semi-finalist picks once all 4 semi-final fixtures are confirmed."""
     with db.db() as conn:
         if db.semi_picks_already_scored(conn):
             return
@@ -639,7 +802,6 @@ def score_semi_picks_job():
 
 
 def score_group_goals_job():
-    """Score group stage total goals guesses once all 72 group matches are finished."""
     GROUP_STAGE_MATCH_COUNT = 72
     with db.db() as conn:
         if db.group_goals_already_scored(conn):
@@ -661,13 +823,11 @@ def score_group_goals_job():
 
 
 def score_golden_boot_job():
-    """Score golden boot picks automatically once the Final is finished."""
     from app.scoring import TOURNAMENT_PICK_POINTS
     with db.db() as conn:
         if db.scorer_picks_already_scored(conn):
             return
         if not db.get_tournament_winner(conn):
-            # Final not finished yet
             return
         player_name = fetch_top_scorer()
         if not player_name:
@@ -683,9 +843,10 @@ def score_golden_boot_job():
     logger.info("Golden boot scored — winner: %s, awarded to: %s", player_name, awarded)
 
 
+# ─── Utilities ────────────────────────────────────────────────────────────────
+
 def _advance_note(match) -> str:
-    """Return ' → Team advances (AET)' etc. for knockout matches."""
-    winner_field = match["winner"]  # HOME_TEAM / AWAY_TEAM / null
+    winner_field = match["winner"]
     duration = match["duration"] or "REGULAR"
 
     if winner_field == "HOME_TEAM":
@@ -709,6 +870,8 @@ def _stage_multiplier_label(stage: str) -> str:
     m = STAGE_MULTIPLIERS.get(stage, 1.0)
     return str(int(m)) if m == int(m) else str(m)
 
+
+# ─── Scheduler setup ─────────────────────────────────────────────────────────
 
 def start_scheduler(slack_client=None) -> BackgroundScheduler:
     poll_interval = int(os.getenv("POLL_INTERVAL", "60"))

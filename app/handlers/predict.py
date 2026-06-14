@@ -35,7 +35,7 @@ def _date_picker_block(options: list[dict], initial: str | None = None) -> dict:
         "type": "input",
         "block_id": "block_date",
         "dispatch_action": True,
-        "label": {"type": "plain_text", "text": ":calendar: Match day"},
+        "label": {"type": "plain_text", "text": "Match day"},
         "element": {
             "type": "static_select",
             "action_id": DATE_ACTION,
@@ -51,6 +51,7 @@ def _date_picker_block(options: list[dict], initial: str | None = None) -> dict:
 
 
 def _match_blocks(matches: list[dict]) -> list[dict]:
+    """Build blocks for each match. Max 5 blocks per match to stay within modal limits."""
     blocks = []
     for m in matches:
         if is_kickoff_passed(m["kickoff_utc"]):
@@ -60,23 +61,24 @@ def _match_blocks(matches: list[dict]) -> list[dict]:
         pred_away = m.get("pred_away")
         has_pred = pred_home is not None and pred_away is not None
 
-        text = (
+        # Match header: name + kickoff + existing pick
+        match_text = (
             f"*{vs(m['home_team'], m['away_team'])}*\n"
             f":clock3: {format_kickoff(m['kickoff_utc'])}  ·  {stage_label(m['stage'])}"
-            + (f"  ·  _your pick: {pred_home} - {pred_away}_" if has_pred else "")
         )
-        prob_line = format_prob_line(m)
-        if prob_line:
-            text += f"\n{prob_line}"
-        ud_line = format_underdog_line(m, action=True)
-        if ud_line:
-            text += f"\n{ud_line}"
+        if has_pred:
+            match_text += f"  ·  _your pick: {pred_home} - {pred_away}_"
 
         blocks.append({"type": "divider"})
-        blocks.append({
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": text},
-        })
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": match_text}})
+
+        # Odds + underdog as a single context block (one block instead of two)
+        context_parts = [x for x in [format_prob_line(m), format_underdog_line(m, action=True)] if x]
+        if context_parts:
+            blocks.append({
+                "type": "context",
+                "elements": [{"type": "mrkdwn", "text": t} for t in context_parts],
+            })
 
         home_el = {
             "type": "plain_text_input",
@@ -137,7 +139,7 @@ def open_predict_modal(client, trigger_id: str, slack_user_id: str):
         view={
             "type": "modal",
             "callback_id": CALLBACK_ID,
-            "title": {"type": "plain_text", "text": ":soccer: Predict", "emoji": True},
+            "title": {"type": "plain_text", "text": "Make your predictions", "emoji": True},
             "close": {"type": "plain_text", "text": "Cancel"},
             "private_metadata": json.dumps({"user_id": slack_user_id}),
             "blocks": [_date_picker_block(options)],
@@ -159,7 +161,6 @@ def handle_date_selected(ack, body, client):
     match_blocks = _match_blocks(matches)
 
     if not match_blocks:
-        # All matches on this date have kicked off since the modal opened
         blocks = [
             _date_picker_block(options, initial=date_str),
             {
@@ -173,7 +174,7 @@ def handle_date_selected(ack, body, client):
             view={
                 "type": "modal",
                 "callback_id": CALLBACK_ID,
-                "title": {"type": "plain_text", "text": ":soccer: Predict", "emoji": True},
+                "title": {"type": "plain_text", "text": "Make your predictions", "emoji": True},
                 "close": {"type": "plain_text", "text": "Cancel"},
                 "private_metadata": view["private_metadata"],
                 "blocks": blocks,
@@ -187,7 +188,7 @@ def handle_date_selected(ack, body, client):
         view={
             "type": "modal",
             "callback_id": CALLBACK_ID,
-            "title": {"type": "plain_text", "text": ":soccer: Predict", "emoji": True},
+            "title": {"type": "plain_text", "text": "Make your predictions", "emoji": True},
             "submit": {"type": "plain_text", "text": "Lock In"},
             "close": {"type": "plain_text", "text": "Cancel"},
             "private_metadata": view["private_metadata"],
@@ -196,7 +197,7 @@ def handle_date_selected(ack, body, client):
                 *match_blocks,
                 {
                     "type": "context",
-                    "elements": [{"type": "mrkdwn", "text": ":lock: You can update predictions any time before kickoff. Leave a match blank to skip it."}],
+                    "elements": [{"type": "mrkdwn", "text": ":lock: Predictions lock at kickoff. Leave a match blank to skip."}],
                 },
             ],
         },
@@ -275,15 +276,31 @@ def handle_predict_submit(ack, body, client):
         )
         return
 
-    lines = [f":white_check_mark: *{len(confirmed)} prediction{'s' if len(confirmed) != 1 else ''} saved:*\n"]
+    blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f":white_check_mark: *{len(confirmed)} prediction{'s' if len(confirmed) != 1 else ''} saved!*",
+            },
+        },
+        {"type": "divider"},
+    ]
     for match, home_score, away_score in confirmed:
-        lines.append(
-            f"  {home(match['home_team'])} *{home_score} - {away_score}* {away(match['away_team'])}"
-            f"  ·  _{format_kickoff(match['kickoff_utc'])}_"
-        )
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f"{home(match['home_team'])} *{home_score} - {away_score}* {away(match['away_team'])}"
+                    f"  ·  _{format_kickoff(match['kickoff_utc'])}_"
+                ),
+            },
+        })
 
     client.chat_postEphemeral(
         channel=slack_user_id,
         user=slack_user_id,
-        text="\n".join(lines),
+        text=f"{len(confirmed)} predictions saved!",
+        blocks=blocks,
     )

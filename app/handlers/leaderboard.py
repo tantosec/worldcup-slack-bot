@@ -11,17 +11,29 @@ def handle_leaderboard(respond, client, body):
         respond(response_type="ephemeral", text="No predictions scored yet. Check back after the first match!")
         return
 
-    lines = [":trophy: *FIFA World Cup 2026 — Leaderboard*\n"]
+    blocks = [
+        {"type": "header", "text": {"type": "plain_text", "text": "🏆 FIFA World Cup 2026 — Leaderboard", "emoji": True}},
+        {"type": "divider"},
+    ]
+
+    pairs = []
     for i, row in enumerate(rows, start=1):
         medal = MEDALS.get(i, f"`{i}.`")
-        user = f"<@{row['slack_user_id']}>"
-        pts = row["total_points"]
-        exact = row["exact_scores"]
-        upsets = row["upsets_called"]
-        scored = row["scored_predictions"]
-        total = row["total_predictions"]
+        exact = row["exact_scores"] or 0
+        upsets = row["upsets_called"] or 0
+        scored = row["scored_predictions"] or 0
+        total = row["total_predictions"] or 0
+        pairs.append((
+            f"{medal}  <@{row['slack_user_id']}>",
+            f"*{row['total_points']} pts*  ·  :dart: {exact}  ·  :zap: {upsets}  ·  {scored}/{total}",
+        ))
 
-        detail = f"*{pts} pts*  ·  :dart: {exact} exact  ·  :zap: {upsets} upsets  ·  {scored}/{total} scored"
-        lines.append(f"{medal}  {user}  —  {detail}")
+    for i in range(0, len(pairs), 5):
+        chunk = pairs[i:i + 5]
+        fields = []
+        for left, right in chunk:
+            fields.append({"type": "mrkdwn", "text": left})
+            fields.append({"type": "mrkdwn", "text": right})
+        blocks.append({"type": "section", "fields": fields})
 
-    respond(response_type="ephemeral", text="\n".join(lines))
+    respond(response_type="ephemeral", blocks=blocks, text="FIFA World Cup 2026 — Leaderboard")
