@@ -56,6 +56,7 @@ def score_finished_matches(slack_client=None):
         if slack_client:
             try:
                 _post_result_summary(slack_client, match, results, leaderboard)
+                logger.info("Posted result summary for match %s", match["id"])
             except Exception as exc:
                 logger.error("Failed to post result summary for match %s, will retry: %s", match["id"], exc)
                 continue

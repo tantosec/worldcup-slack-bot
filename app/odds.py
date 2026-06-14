@@ -84,7 +84,7 @@ def fetch_and_store_odds(conn) -> None:
             continue
 
         row = conn.execute(
-            "SELECT id FROM matches WHERE home_team = ? AND away_team = ?",
+            "SELECT id FROM matches WHERE home_team = ? AND away_team = ? AND status IN ('SCHEDULED', 'TIMED')",
             (home, away),
         ).fetchone()
 
