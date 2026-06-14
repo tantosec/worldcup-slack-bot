@@ -56,7 +56,20 @@ def handle_me(respond, body, client):
         finished_preds = db.get_user_finished_predictions(conn, target_id)
         upcoming_preds = [] if viewing_other else db.get_user_upcoming_predictions(conn, target_id)
 
-    header_name = f"<@{target_id}>'s" if viewing_other else "Your"
+    if viewing_other:
+        try:
+            user_info = client.users_info(user=target_id)
+            display_name = (
+                user_info["user"]["profile"].get("display_name")
+                or user_info["user"]["profile"].get("real_name")
+                or "Unknown"
+            )
+            header_name = f"{display_name}'s"
+        except Exception:
+            header_name = "Their"
+    else:
+        header_name = "Your"
+
     match_pts = stats["match_points"] or 0
     tournament_pts = (total_points or 0) - match_pts
 
@@ -150,7 +163,7 @@ def handle_me(respond, body, client):
         if hidden:
             blocks.append(_context(f"_...and {hidden} more — use `/predict` to manage all picks_"))
 
-    respond(response_type="ephemeral", blocks=blocks, text=f"{header_name} World Cup 2026 Stats")
+    respond(response_type="ephemeral", blocks=blocks, text=f"📊 {header_name} World Cup 2026 Stats")
 
 
 def _picks_text(picks, locked: bool) -> str:
