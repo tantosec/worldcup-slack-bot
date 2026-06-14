@@ -54,6 +54,18 @@ RANKINGS: dict[str, int] = {
     "Panama": 50,
     "Bolivia": 51,
     "Paraguay": 52,
+    "Norway": 31,
+    "Ivory Coast": 33,
+    "Sweden": 38,
+    "Scotland": 42,
+    "Congo DR": 46,
+    "Uzbekistan": 50,
+    "Iraq": 57,
+    "Jordan": 63,
+    "Bosnia-Herzegovina": 64,
+    "Cape Verde Islands": 67,
+    "Curaçao": 82,
+    "Haiti": 83,
 }
 
 UNKNOWN_RANK = 99
