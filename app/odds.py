@@ -164,7 +164,7 @@ def get_underdog(match) -> str | None:
                 return match["home_team"]
             if h_pct / a_pct >= _UNDERDOG_RATIO:
                 return match["away_team"]
-        return None
+        # Odds too close — fall back to FIFA rankings
 
     # Fallback: FIFA ranking ratio (higher number = weaker)
     home_rank = get_rank(match["home_team"])
