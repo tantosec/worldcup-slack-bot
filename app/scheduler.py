@@ -85,6 +85,7 @@ def score_finished_matches(slack_client=None):
                     match["home_score"], match["away_score"],
                     match["home_team"], match["away_team"],
                     match["stage"],
+                    match=match,
                 )
                 db.update_prediction_points(conn, pred["id"], pts)
                 results.append((pred["slack_user_id"], pred["home_score"], pred["away_score"], pts))
@@ -305,6 +306,7 @@ def send_goal_notifications(slack_client):
                 curr_home, curr_away,
                 match["home_team"], match["away_team"],
                 match["stage"],
+                match=match,
             )
             if pts > 0:
                 exact = p["home_score"] == curr_home and p["away_score"] == curr_away

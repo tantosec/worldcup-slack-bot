@@ -1,4 +1,5 @@
 from app.fifa_rankings import get_rank
+from app.odds import get_underdog
 
 STAGE_MULTIPLIERS: dict[str, float] = {
     "GROUP_STAGE":    1.0,
@@ -78,6 +79,7 @@ def calculate_points(
     home_team: str,
     away_team: str,
     stage: str = "GROUP_STAGE",
+    match: dict | None = None,
 ) -> int:
     base = 0
 
@@ -87,7 +89,7 @@ def calculate_points(
         base = 3
 
     if base > 0:
-        base += _upset_bonus(pred_home, pred_away, act_home, act_away, home_team, away_team)
+        base += _upset_bonus(pred_home, pred_away, act_home, act_away, match)
 
     multiplier = STAGE_MULTIPLIERS.get(stage, 1.0)
     return round(base * multiplier)
@@ -98,19 +100,19 @@ def _upset_bonus(
     pred_away: int,
     act_home: int,
     act_away: int,
-    home_team: str,
-    away_team: str,
+    match: dict | None,
 ) -> int:
-    home_rank = get_rank(home_team)
-    away_rank = get_rank(away_team)
-
     actual_winner = _result(act_home, act_away)
     pred_winner = _result(pred_home, pred_away)
 
     if actual_winner == "draw" or pred_winner == "draw":
         return 0
 
-    underdog_side = "home" if home_rank > away_rank else "away"
+    underdog = get_underdog(match) if match else None
+    if underdog is None:
+        return 0
+
+    underdog_side = "home" if underdog == match["home_team"] else "away"
 
     if actual_winner == underdog_side and pred_winner == underdog_side:
         return 2
