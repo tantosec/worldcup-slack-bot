@@ -1,11 +1,13 @@
 import logging
 import os
+from datetime import timezone
+from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from app import db
 from app.flags import flag, home, away, vs
 from app.espn import (
     fetch_live_matches, fetch_all_matches, fetch_match_summary,
-    get_goal_scorers, get_match_stats, fetch_top_scorer,
+    get_goal_scorers, get_match_stats, get_second_half_kickoff, fetch_top_scorer,
 )
 from app.football import format_kickoff, format_score, format_score_note, stage_label, estimate_match_time
 from app.odds import fetch_and_store_odds, sync_odds_if_stale, format_prob_line, format_underdog_line
@@ -162,11 +164,11 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None):
             goal_lines = []
             if home_goals:
                 goal_lines.append(flag(match["home_team"]) + "  " + "  ·  ".join(
-                    f"*{g['scorer_name']}* {g['minute']}" for g in home_goals
+                    f":soccer: *{g['scorer_name']}* {g['minute']}'" for g in home_goals
                 ))
             if away_goals:
                 goal_lines.append(flag(match["away_team"]) + "  " + "  ·  ".join(
-                    f"*{g['scorer_name']}* {g['minute']}" for g in away_goals
+                    f":soccer: *{g['scorer_name']}* {g['minute']}'" for g in away_goals
                 ))
             if goal_lines:
                 blocks.append(_block_context("\n".join(goal_lines)))
@@ -315,16 +317,16 @@ def send_goal_notifications(slack_client):
         try:
             summary = fetch_match_summary(match["external_id"])
             all_goals = get_goal_scorers(summary)
-            display_clock = summary.get("header", {}).get("competitions", [{}])[0].get(
+            display_clock = summary.get("header", [{}])[0].get("competitions", [{}])[0].get(
                 "status", {}).get("displayClock")
             if new_home > 0:
                 home_goals = [g for g in all_goals if g["team_name"] == match["home_team"]]
                 for g in home_goals[-new_home:]:
-                    scorer_lines.append(f"{flag(match['home_team'])}  *{g['scorer_name']}* {g['minute']}")
+                    scorer_lines.append(f"{flag(match['home_team'])}  :soccer: *{g['scorer_name']}* {g['minute']}'")
             if new_away > 0:
                 away_goals = [g for g in all_goals if g["team_name"] == match["away_team"]]
                 for g in away_goals[-new_away:]:
-                    scorer_lines.append(f"{flag(match['away_team'])}  *{g['scorer_name']}* {g['minute']}")
+                    scorer_lines.append(f"{flag(match['away_team'])}  :soccer: *{g['scorer_name']}* {g['minute']}'")
         except Exception as exc:
             logger.warning("Could not fetch ESPN goal details: %s", exc)
 
@@ -437,11 +439,11 @@ def send_halftime_notifications(slack_client):
                 goal_lines = []
                 if home_goals:
                     goal_lines.append(flag(match["home_team"]) + "  " + "  ·  ".join(
-                        f"*{g['scorer_name']}* {g['minute']}" for g in home_goals
+                        f":soccer: *{g['scorer_name']}* {g['minute']}'" for g in home_goals
                     ))
                 if away_goals:
                     goal_lines.append(flag(match["away_team"]) + "  " + "  ·  ".join(
-                        f"*{g['scorer_name']}* {g['minute']}" for g in away_goals
+                        f":soccer: *{g['scorer_name']}* {g['minute']}'" for g in away_goals
                     ))
                 if goal_lines:
                     blocks.append(_block_context("\n".join(goal_lines)))
@@ -453,6 +455,13 @@ def send_halftime_notifications(slack_client):
                     f"·  {stats['home_shots_on_target']} shots on target  ·  "
                     f"{match['away_team']} {stats['away_possession']}% poss "
                     f"·  {stats['away_shots_on_target']} shots on target"
+                ))
+            second_half_dt = get_second_half_kickoff(summary)
+            if second_half_dt:
+                _disp_tz = ZoneInfo(os.getenv("DISPLAY_TIMEZONE", "Australia/Sydney"))
+                second_half_local = second_half_dt.astimezone(_disp_tz)
+                blocks.append(_block_context(
+                    f":clock2:  _Second half expected around {second_half_local.strftime('%-I:%M %p %Z')}_"
                 ))
         except Exception as exc:
             logger.warning("Could not fetch ESPN halftime stats: %s", exc)
@@ -499,6 +508,64 @@ def send_halftime_notifications(slack_client):
                 db.mark_halftime_notified(conn, match["id"])
         except Exception as exc:
             logger.error("Failed to post halftime notification for match %s: %s", match["id"], exc)
+
+
+# ─── Second half notifications ────────────────────────────────────────────────
+
+def send_second_half_notifications(slack_client):
+    """Post a 'second half underway' message when a match resumes after halftime."""
+    channel = os.getenv("RESULTS_CHANNEL")
+    if not channel:
+        return
+
+    with db.db() as conn:
+        matches = db.get_matches_needing_second_half_notification(conn)
+
+    for match in matches:
+        curr_home = match["home_score"] or 0
+        curr_away = match["away_score"] or 0
+
+        score_text = (
+            f"*{home(match['home_team'])} {curr_home} - {curr_away} {away(match['away_team'])}*"
+            f"  ·  _{stage_label(match['stage'])}_"
+        )
+
+        blocks = [
+            _block_section(":large_green_circle:  *SECOND HALF UNDERWAY*"),
+            _block_divider(),
+            _block_section(score_text),
+        ]
+
+        try:
+            summary = fetch_match_summary(match["external_id"])
+            goals = get_goal_scorers(summary)
+            if goals:
+                home_goals = [g for g in goals if g["team_name"] == match["home_team"]]
+                away_goals = [g for g in goals if g["team_name"] == match["away_team"]]
+                goal_lines = []
+                if home_goals:
+                    goal_lines.append(flag(match["home_team"]) + "  " + "  ·  ".join(
+                        f":soccer: *{g['scorer_name']}* {g['minute']}'" for g in home_goals
+                    ))
+                if away_goals:
+                    goal_lines.append(flag(match["away_team"]) + "  " + "  ·  ".join(
+                        f":soccer: *{g['scorer_name']}* {g['minute']}'" for g in away_goals
+                    ))
+                if goal_lines:
+                    blocks.append(_block_context("\n".join(goal_lines)))
+        except Exception as exc:
+            logger.warning("Could not fetch ESPN second half details: %s", exc)
+
+        try:
+            _post_attachment(
+                slack_client, channel,
+                f"Second Half: {match['home_team']} {curr_home} - {curr_away} {match['away_team']}",
+                "#43a047", blocks,
+            )
+            with db.db() as conn:
+                db.mark_second_half_notified(conn, match["id"])
+        except Exception as exc:
+            logger.error("Failed to post second half notification for match %s: %s", match["id"], exc)
 
 
 # ─── Kickoff announcements ────────────────────────────────────────────────────
@@ -1048,6 +1115,7 @@ def live_updates(slack_client=None):
     sync_fixtures()
     send_goal_notifications(slack_client)
     send_halftime_notifications(slack_client)
+    send_second_half_notifications(slack_client)
 
 
 def start_scheduler(slack_client=None) -> BackgroundScheduler:

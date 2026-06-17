@@ -197,32 +197,31 @@ def fetch_match_summary(event_id: int) -> dict:
 
 
 def get_goal_scorers(summary: dict) -> list[dict]:
-    """Extract all goals from a match summary: [{team_name, scorer_name, minute}]."""
+    """Extract all goals from keyEvents: [{team_name, scorer_name, minute}]."""
     goals = []
-    for roster in summary.get("rosters", []):
-        team_name = roster.get("team", {}).get("displayName", "")
-        for athlete in roster.get("athletes", []):
-            for play in athlete.get("plays", []):
-                if not play.get("scoringPlay"):
-                    continue
-                athlete_info = athlete.get("athlete", {})
-                name = (
-                    athlete_info.get("shortName")
-                    or athlete_info.get("displayName")
-                    or "Unknown"
-                )
-                minute = play.get("clock", {}).get("displayValue", "?")
-                goals.append({"team_name": team_name, "scorer_name": name, "minute": minute})
-
-    def _sort_key(g):
-        m = g["minute"].replace("'", "").split("+")[0]
-        try:
-            return int(m)
-        except ValueError:
-            return 999
-
-    goals.sort(key=_sort_key)
+    for event in summary.get("keyEvents", []):
+        if not event.get("scoringPlay"):
+            continue
+        team_name = event.get("team", {}).get("displayName", "")
+        participants = event.get("participants", [])
+        scorer_name = (
+            participants[0].get("athlete", {}).get("displayName", "Unknown")
+            if participants else "Unknown"
+        )
+        minute = event.get("clock", {}).get("displayValue", "?")
+        goals.append({"team_name": team_name, "scorer_name": scorer_name, "minute": minute})
     return goals
+
+
+def get_second_half_kickoff(summary: dict) -> datetime | None:
+    """Return estimated second half kickoff (halftime wallclock + 15 min), or None."""
+    for event in summary.get("keyEvents", []):
+        if event.get("type", {}).get("type") == "halftime":
+            wc = event.get("wallclock")
+            if wc:
+                ht = datetime.fromisoformat(wc.replace("Z", "+00:00"))
+                return ht + timedelta(minutes=15)
+    return None
 
 
 def get_match_stats(summary: dict) -> dict | None:

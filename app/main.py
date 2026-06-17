@@ -18,7 +18,7 @@ from app.handlers.picks import open_picks_modal, handle_picks_submit, CALLBACK_I
 from app.players import search as search_players
 from app.handlers.leaderboard import handle_leaderboard
 from app.handlers.fixtures import handle_fixtures, handle_fixtures_show_more, SHOW_MORE_ACTION
-from app.handlers.results import handle_results
+from app.handlers.results import handle_results, handle_results_show_more, SHOW_MORE_RESULTS_ACTION
 from app.handlers.scoring import handle_scoring
 from app.handlers.me import handle_me
 
@@ -131,6 +131,11 @@ def action_fixtures_show_more(ack, respond, body):
 def cmd_results(ack, respond, body):
     ack()
     handle_results(respond, body)
+
+
+@app.action(SHOW_MORE_RESULTS_ACTION)
+def action_results_show_more(ack, respond, body):
+    handle_results_show_more(ack, respond, body)
 
 
 # ── Slash command: /scoring ───────────────────────────────────────────────────
