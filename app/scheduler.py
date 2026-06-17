@@ -164,11 +164,11 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None):
             goal_lines = []
             if home_goals:
                 goal_lines.append(flag(match["home_team"]) + "  " + "  ·  ".join(
-                    f":soccer: *{g['scorer_name']}* {g['minute']}'" for g in home_goals
+                    f":soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}" for g in home_goals
                 ))
             if away_goals:
                 goal_lines.append(flag(match["away_team"]) + "  " + "  ·  ".join(
-                    f":soccer: *{g['scorer_name']}* {g['minute']}'" for g in away_goals
+                    f":soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}" for g in away_goals
                 ))
             if goal_lines:
                 blocks.append(_block_context("\n".join(goal_lines)))
@@ -298,6 +298,12 @@ def send_goal_notifications(slack_client):
                 db.mark_score_notified(conn, match["id"], curr_home, curr_away)
             continue
 
+        # Penalty shootout: suppress per-kick notifications, full-time result covers it
+        if match["duration"] == "PENALTY_SHOOTOUT":
+            with db.db() as conn:
+                db.mark_score_notified(conn, match["id"], curr_home, curr_away)
+            continue
+
         prev_home = match["notified_home_score"] if match["notified_home_score"] is not None else 0
         prev_away = match["notified_away_score"] if match["notified_away_score"] is not None else 0
 
@@ -322,11 +328,11 @@ def send_goal_notifications(slack_client):
             if new_home > 0:
                 home_goals = [g for g in all_goals if g["team_name"] == match["home_team"]]
                 for g in home_goals[-new_home:]:
-                    scorer_lines.append(f"{flag(match['home_team'])}  :soccer: *{g['scorer_name']}* {g['minute']}'")
+                    scorer_lines.append(f"{flag(match['home_team'])}  :soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}")
             if new_away > 0:
                 away_goals = [g for g in all_goals if g["team_name"] == match["away_team"]]
                 for g in away_goals[-new_away:]:
-                    scorer_lines.append(f"{flag(match['away_team'])}  :soccer: *{g['scorer_name']}* {g['minute']}'")
+                    scorer_lines.append(f"{flag(match['away_team'])}  :soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}")
         except Exception as exc:
             logger.warning("Could not fetch ESPN goal details: %s", exc)
 
@@ -439,11 +445,11 @@ def send_halftime_notifications(slack_client):
                 goal_lines = []
                 if home_goals:
                     goal_lines.append(flag(match["home_team"]) + "  " + "  ·  ".join(
-                        f":soccer: *{g['scorer_name']}* {g['minute']}'" for g in home_goals
+                        f":soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}" for g in home_goals
                     ))
                 if away_goals:
                     goal_lines.append(flag(match["away_team"]) + "  " + "  ·  ".join(
-                        f":soccer: *{g['scorer_name']}* {g['minute']}'" for g in away_goals
+                        f":soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}" for g in away_goals
                     ))
                 if goal_lines:
                     blocks.append(_block_context("\n".join(goal_lines)))
@@ -545,11 +551,11 @@ def send_second_half_notifications(slack_client):
                 goal_lines = []
                 if home_goals:
                     goal_lines.append(flag(match["home_team"]) + "  " + "  ·  ".join(
-                        f":soccer: *{g['scorer_name']}* {g['minute']}'" for g in home_goals
+                        f":soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}" for g in home_goals
                     ))
                 if away_goals:
                     goal_lines.append(flag(match["away_team"]) + "  " + "  ·  ".join(
-                        f":soccer: *{g['scorer_name']}* {g['minute']}'" for g in away_goals
+                        f":soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}" for g in away_goals
                     ))
                 if goal_lines:
                     blocks.append(_block_context("\n".join(goal_lines)))

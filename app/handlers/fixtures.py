@@ -127,7 +127,7 @@ def _build_fixtures_blocks(slack_user_id: str, show_all_upcoming: bool = False) 
 
             if scorers:
                 scorer_parts = [
-                    f":soccer: {s['scorer_name']} {s['minute']}' _({s['team_name']})_"
+                    f":soccer: {s['scorer_name']} {s['minute']}'{s['suffix']} _({s['team_name']})_"
                     for s in scorers
                 ]
                 blocks.append(_context("  ·  ".join(scorer_parts)))

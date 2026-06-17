@@ -196,20 +196,30 @@ def fetch_match_summary(event_id: int) -> dict:
         return {}
 
 
+_GOAL_TYPE_SUFFIX = {
+    "penalty---scored": " _(pen)_",
+    "own-goal":         " _(OG)_",
+}
+
+
 def get_goal_scorers(summary: dict) -> list[dict]:
-    """Extract all goals from keyEvents: [{team_name, scorer_name, minute}]."""
+    """Extract all goals from keyEvents: [{team_name, scorer_name, minute, suffix}]."""
     goals = []
     for event in summary.get("keyEvents", []):
         if not event.get("scoringPlay"):
             continue
         team_name = event.get("team", {}).get("displayName", "")
         participants = event.get("participants", [])
-        scorer_name = (
-            participants[0].get("athlete", {}).get("displayName", "Unknown")
-            if participants else "Unknown"
-        )
+        if not participants:
+            scorer_name = "Unknown"
+        elif isinstance(participants[0], str):
+            scorer_name = participants[0]
+        else:
+            scorer_name = participants[0].get("athlete", {}).get("displayName", "Unknown")
         minute = event.get("clock", {}).get("displayValue", "?")
-        goals.append({"team_name": team_name, "scorer_name": scorer_name, "minute": minute})
+        event_type = event.get("type", {}).get("type", "")
+        suffix = _GOAL_TYPE_SUFFIX.get(event_type, "")
+        goals.append({"team_name": team_name, "scorer_name": scorer_name, "minute": minute, "suffix": suffix})
     return goals
 
 

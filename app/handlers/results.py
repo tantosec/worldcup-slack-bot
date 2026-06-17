@@ -41,11 +41,11 @@ def _match_blocks(m, pred) -> list:
             goal_lines = []
             if home_goals:
                 goal_lines.append(flag(m["home_team"]) + "  " + "  ·  ".join(
-                    f":soccer: *{g['scorer_name']}* {g['minute']}'" for g in home_goals
+                    f":soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}" for g in home_goals
                 ))
             if away_goals:
                 goal_lines.append(flag(m["away_team"]) + "  " + "  ·  ".join(
-                    f":soccer: *{g['scorer_name']}* {g['minute']}'" for g in away_goals
+                    f":soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}" for g in away_goals
                 ))
             if goal_lines:
                 blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": "\n".join(goal_lines)}]})
