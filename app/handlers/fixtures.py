@@ -155,10 +155,25 @@ def _build_fixtures_blocks(slack_user_id: str, show_all_upcoming: bool = False) 
                 blocks.append(_context(":ghost:  No pick: " + "  ".join(f"<@{uid}>" for uid in no_pick)))
 
     # ── Upcoming matches ──────────────────────────────────────────────────────────
-    visible = today_upcoming + (later_upcoming if show_all_upcoming else [])
-    if visible or later_upcoming:
+    candidates = today_upcoming + (later_upcoming if show_all_upcoming else [])
+    remaining_after = [] if not show_all_upcoming else []
+
+    # Fit as many matches as possible within Slack's 50-block limit (keep 3 buffer)
+    MAX_BLOCKS = 47
+    upcoming_section_overhead = 3  # divider + header + divider
+    fit = []
+    spare = MAX_BLOCKS - len(blocks) - upcoming_section_overhead
+    for m in candidates:
+        cost = 1 + len([x for x in [format_prob_line(m), format_underdog_line(m, action=True)] if x])
+        if spare - cost < 1:  # keep 1 spare for the overflow note or button
+            remaining_after = candidates[candidates.index(m):]
+            break
+        fit.append(m)
+        spare -= cost
+
+    if fit or later_upcoming:
         blocks += [_divider(), _section(":calendar:  *Upcoming*"), _divider()]
-        blocks += _upcoming_blocks(visible, user_preds)
+        blocks += _upcoming_blocks(fit, user_preds)
 
         if not show_all_upcoming and later_upcoming:
             blocks.append({
@@ -173,6 +188,8 @@ def _build_fixtures_blocks(slack_user_id: str, show_all_upcoming: bool = False) 
                     "action_id": SHOW_MORE_ACTION,
                 }],
             })
+        elif remaining_after:
+            blocks.append(_context(f"_…and {len(remaining_after)} more matches not shown — check the FIFA app for the full schedule_"))
 
     return blocks
 
