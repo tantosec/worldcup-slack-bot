@@ -21,12 +21,14 @@ def _divider() -> dict:
     return {"type": "divider"}
 
 
-def _venue_line(m: dict) -> str | None:
-    if not m.get("venue_name"):
+def _venue_line(m) -> str | None:
+    venue_name = m["venue_name"]
+    if not venue_name:
         return None
-    parts = [m["venue_name"]]
-    if m.get("venue_city"):
-        parts.append(m["venue_city"])
+    parts = [venue_name]
+    city = m["venue_city"]
+    if city:
+        parts.append(city)
     return ":round_pushpin: " + ", ".join(parts)
 
 
