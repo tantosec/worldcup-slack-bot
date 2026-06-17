@@ -39,7 +39,7 @@ ZEBRA_BOLD = [
 ZEBRA_WILDCARD = [
     "Paraguay", "South Africa", "Bosnia-Herzegovina", "Uzbekistan",
     "Jordan", "Iraq", "Qatar", "Congo DR", "Panama",
-    "New Zealand", "Cape Verde Islands", "Haiti", "Curaçao",
+    "New Zealand", "Cape Verde", "Haiti", "Curaçao",
 ]
 
 

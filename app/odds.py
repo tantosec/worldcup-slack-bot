@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://api.the-odds-api.com/v4"
 SPORT = "soccer_fifa_world_cup"
 
-# Mapping from The Odds API team names → our football-data.org team names
+# Mapping from The Odds API team names → ESPN team names
 TEAM_NAME_MAP: dict[str, str] = {
     "USA":                      "United States",
     "United States of America": "United States",
@@ -19,9 +19,9 @@ TEAM_NAME_MAP: dict[str, str] = {
     "Cote d'Ivoire":            "Ivory Coast",
     "DR Congo":                 "Congo DR",
     "Democratic Republic of Congo": "Congo DR",
-    "Cape Verde":               "Cape Verde Islands",
     "Bosnia & Herzegovina":     "Bosnia-Herzegovina",
     "Bosnia and Herzegovina":   "Bosnia-Herzegovina",
+    "Turkey":                   "Türkiye",
     "Curacao":                  "Curaçao",
     "South Korea":              "South Korea",
     "Korea Republic":           "South Korea",

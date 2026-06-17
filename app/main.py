@@ -25,7 +25,7 @@ from app.handlers.me import handle_me
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-_REQUIRED_ENV = ["SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "FOOTBALL_DATA_API_KEY", "RESULTS_CHANNEL"]
+_REQUIRED_ENV = ["SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "RESULTS_CHANNEL"]
 
 def _validate_env():
     missing = [k for k in _REQUIRED_ENV if not os.getenv(k)]

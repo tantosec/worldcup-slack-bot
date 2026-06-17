@@ -1043,17 +1043,21 @@ def _stage_multiplier_label(stage: str) -> str:
 
 # ─── Scheduler setup ─────────────────────────────────────────────────────────
 
+def live_updates(slack_client=None):
+    """Fast poll: sync live ESPN scores then fire goal/halftime notifications."""
+    sync_fixtures()
+    send_goal_notifications(slack_client)
+    send_halftime_notifications(slack_client)
+
+
 def start_scheduler(slack_client=None) -> BackgroundScheduler:
     poll_interval = int(os.getenv("POLL_INTERVAL", "60"))
+    live_poll = int(os.getenv("LIVE_POLL_INTERVAL", "10"))
 
     scheduler = BackgroundScheduler(timezone="UTC")
 
-    # Full fixture import on startup, then live polling every interval
+    # Full fixture import on startup, then every 6h to pick up knockout teams
     sync_all_fixtures()
-
-    scheduler.add_job(sync_fixtures, "interval", seconds=poll_interval, id="sync_fixtures")
-
-    # Full re-import every 6 hours to pick up new knockout matches
     scheduler.add_job(sync_all_fixtures, "interval", hours=6, id="sync_all_fixtures")
 
     def sync_odds_job():
@@ -1062,6 +1066,12 @@ def start_scheduler(slack_client=None) -> BackgroundScheduler:
 
     scheduler.add_job(sync_odds_job, "interval", hours=6, id="sync_odds")
 
+    # Fast poll: live score sync + goal + halftime notifications
+    scheduler.add_job(
+        lambda: live_updates(slack_client),
+        "interval", seconds=live_poll, id="live_updates",
+    )
+
     scheduler.add_job(
         lambda: score_finished_matches(slack_client),
         "interval", seconds=poll_interval, id="score_matches",
@@ -1069,14 +1079,6 @@ def start_scheduler(slack_client=None) -> BackgroundScheduler:
     scheduler.add_job(
         lambda: post_picks_reveal(slack_client),
         "interval", seconds=poll_interval, id="picks_reveal",
-    )
-    scheduler.add_job(
-        lambda: send_goal_notifications(slack_client),
-        "interval", seconds=poll_interval, id="goal_notifications",
-    )
-    scheduler.add_job(
-        lambda: send_halftime_notifications(slack_client),
-        "interval", seconds=poll_interval, id="halftime_notifications",
     )
     scheduler.add_job(
         lambda: send_kickoff_announcements(slack_client),
@@ -1116,5 +1118,5 @@ def start_scheduler(slack_client=None) -> BackgroundScheduler:
     )
 
     scheduler.start()
-    logger.info("Scheduler started (poll every %ds)", poll_interval)
+    logger.info("Scheduler started (live poll %ds, other jobs %ds)", live_poll, poll_interval)
     return scheduler
