@@ -1,6 +1,7 @@
 import logging
 import requests
 from datetime import date, timedelta, datetime, timezone
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -174,10 +175,17 @@ def fetch_all_matches() -> list[dict]:
     return fetch_matches_for_dates(dates)
 
 
+_ESPN_TZ = ZoneInfo("America/New_York")
+
+
 def fetch_live_matches() -> list[dict]:
-    """Fetch today + next 2 days — used for frequent live polling."""
-    today = date.today()
-    return fetch_matches_for_dates([today + timedelta(days=i) for i in range(3)])
+    """Fetch today + next 2 days using ESPN's own timezone (America/New_York).
+
+    ESPN keys scoreboard dates by Eastern time regardless of match location,
+    so we must use that timezone to build the correct date strings.
+    """
+    today_espn = datetime.now(tz=_ESPN_TZ).date()
+    return fetch_matches_for_dates([today_espn + timedelta(days=i) for i in range(3)])
 
 
 def fetch_match_summary(event_id: int) -> dict:
