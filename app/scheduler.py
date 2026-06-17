@@ -7,7 +7,7 @@ from app import db
 from app.flags import flag, home, away, vs
 from app.espn import (
     fetch_live_matches, fetch_all_matches, fetch_match_summary,
-    get_goal_scorers, get_match_stats, get_second_half_kickoff, fetch_top_scorer,
+    get_goal_scorers, get_match_stats, get_second_half_kickoff, get_display_clock, fetch_top_scorer,
 )
 from app.football import format_kickoff, format_score, format_score_note, stage_label, estimate_match_time
 from app.odds import fetch_and_store_odds, sync_odds_if_stale, format_prob_line, format_underdog_line
@@ -323,8 +323,7 @@ def send_goal_notifications(slack_client):
         try:
             summary = fetch_match_summary(match["external_id"])
             all_goals = get_goal_scorers(summary)
-            display_clock = summary.get("header", [{}])[0].get("competitions", [{}])[0].get(
-                "status", {}).get("displayClock")
+            display_clock = get_display_clock(summary)
             if new_home > 0:
                 home_goals = [g for g in all_goals if g["team_name"] == match["home_team"]]
                 for g in home_goals[-new_home:]:

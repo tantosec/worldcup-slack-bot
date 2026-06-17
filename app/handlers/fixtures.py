@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from app import db
-from app.espn import fetch_match_summary, get_goal_scorers, get_match_stats
+from app.espn import fetch_match_summary, get_goal_scorers, get_match_stats, get_display_clock
 from app.flags import home, away, vs
 from app.football import format_kickoff, format_score, is_kickoff_passed, stage_label, estimate_match_time
 from app.odds import format_prob_line, format_underdog_line
@@ -40,12 +40,7 @@ def _enrich_live(match: dict) -> tuple:
         summary = fetch_match_summary(match["external_id"])
         scorers = get_goal_scorers(summary)
         stats = get_match_stats(summary)
-        display_clock = (
-            summary.get("header", [{}])[0]
-            .get("competitions", [{}])[0]
-            .get("status", {})
-            .get("displayClock")
-        )
+        display_clock = get_display_clock(summary)
         return scorers, stats, display_clock
     except Exception:
         return [], None, None

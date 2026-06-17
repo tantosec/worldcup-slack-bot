@@ -196,6 +196,17 @@ def fetch_match_summary(event_id: int) -> dict:
         return {}
 
 
+def get_display_clock(summary: dict) -> str | None:
+    """Extract displayClock from a match summary — header can be a dict or a list."""
+    header = summary.get("header") or {}
+    if isinstance(header, list):
+        header = header[0] if header else {}
+    try:
+        return header.get("competitions", [{}])[0].get("status", {}).get("displayClock")
+    except Exception:
+        return None
+
+
 _GOAL_TYPE_SUFFIX = {
     "penalty---scored": " _(pen)_",
     "own-goal":         " _(OG)_",
