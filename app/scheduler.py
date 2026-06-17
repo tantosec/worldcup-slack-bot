@@ -3,7 +3,11 @@ import os
 from apscheduler.schedulers.background import BackgroundScheduler
 from app import db
 from app.flags import flag, home, away, vs
-from app.football import fetch_all_matches, fetch_top_scorer, format_kickoff, format_score, format_score_note, stage_label, estimate_match_time
+from app.espn import (
+    fetch_live_matches, fetch_all_matches, fetch_match_summary,
+    get_goal_scorers, get_match_stats, fetch_top_scorer,
+)
+from app.football import format_kickoff, format_score, format_score_note, stage_label, estimate_match_time
 from app.odds import fetch_and_store_odds, sync_odds_if_stale, format_prob_line, format_underdog_line
 from app.scoring import calculate_points, points_label, score_semi_picks, score_group_goals
 
@@ -48,19 +52,27 @@ def _post_attachment(slack_client, channel: str, fallback: str, color: str, bloc
 # ─── Fixture sync ─────────────────────────────────────────────────────────────
 
 def sync_fixtures():
-    """Pull all WC matches from football-data.org and upsert into DB."""
+    """Pull live + upcoming WC matches from ESPN and upsert into DB."""
     logger.info("Syncing fixtures…")
+    matches = fetch_live_matches()
+    if not matches:
+        return
+    with db.db() as conn:
+        for m in matches:
+            db.upsert_match_espn(conn, m)
+    logger.info("ESPN sync: updated %d matches", len(matches))
+
+
+def sync_all_fixtures():
+    """Full tournament fixture import from ESPN (run on startup)."""
+    logger.info("Full fixture import from ESPN…")
     matches = fetch_all_matches()
     if not matches:
         return
     with db.db() as conn:
-        skipped = 0
         for m in matches:
-            if not m.get("home_team") or not m.get("away_team"):
-                skipped += 1
-                continue
-            db.upsert_match(conn, m)
-    logger.info("Synced %d matches (%d skipped — TBD teams)", len(matches) - skipped, skipped)
+            db.upsert_match_espn(conn, m)
+    logger.info("ESPN full import: %d matches", len(matches))
 
 
 # ─── Match scoring ────────────────────────────────────────────────────────────
@@ -138,6 +150,35 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None):
         blocks.append(_block_context(prob_line))
     if ud_line:
         blocks.append(_block_context(ud_line))
+
+    # Match stats from ESPN
+    try:
+        summary = fetch_match_summary(match["external_id"])
+        goals = get_goal_scorers(summary)
+        stats = get_match_stats(summary)
+        if goals:
+            home_goals = [g for g in goals if g["team_name"] == match["home_team"]]
+            away_goals = [g for g in goals if g["team_name"] == match["away_team"]]
+            goal_lines = []
+            if home_goals:
+                goal_lines.append(flag(match["home_team"]) + "  " + "  ·  ".join(
+                    f"*{g['scorer_name']}* {g['minute']}" for g in home_goals
+                ))
+            if away_goals:
+                goal_lines.append(flag(match["away_team"]) + "  " + "  ·  ".join(
+                    f"*{g['scorer_name']}* {g['minute']}" for g in away_goals
+                ))
+            if goal_lines:
+                blocks.append(_block_context("\n".join(goal_lines)))
+        if stats and stats.get("home_possession"):
+            blocks.append(_block_context(
+                f":bar_chart:  {match['home_team']} {stats['home_possession']}% poss "
+                f"·  {stats['home_shots_on_target']} shots on target  ·  "
+                f"{match['away_team']} {stats['away_possession']}% poss "
+                f"·  {stats['away_shots_on_target']} shots on target"
+            ))
+    except Exception as exc:
+        logger.warning("Could not fetch ESPN stats for full-time: %s", exc)
 
     blocks.append(_block_divider())
     blocks.append(_block_section("🔮  *Predictions*"))
@@ -268,6 +309,25 @@ def send_goal_notifications(slack_client):
         if new_away > 0:
             scoring_teams.append(f"{flag(match['away_team'])} {match['away_team']}")
 
+        # Fetch scorer names from ESPN
+        scorer_lines = []
+        display_clock = None
+        try:
+            summary = fetch_match_summary(match["external_id"])
+            all_goals = get_goal_scorers(summary)
+            display_clock = summary.get("header", {}).get("competitions", [{}])[0].get(
+                "status", {}).get("displayClock")
+            if new_home > 0:
+                home_goals = [g for g in all_goals if g["team_name"] == match["home_team"]]
+                for g in home_goals[-new_home:]:
+                    scorer_lines.append(f"{flag(match['home_team'])}  *{g['scorer_name']}* {g['minute']}")
+            if new_away > 0:
+                away_goals = [g for g in all_goals if g["team_name"] == match["away_team"]]
+                for g in away_goals[-new_away:]:
+                    scorer_lines.append(f"{flag(match['away_team'])}  *{g['scorer_name']}* {g['minute']}")
+        except Exception as exc:
+            logger.warning("Could not fetch ESPN goal details: %s", exc)
+
         if new_total == 1:
             header_text = f":soccer:  *GOOOOOOOAAAALLLLL!*\n{scoring_teams[0]} scores!"
         elif len(scoring_teams) == 1:
@@ -275,7 +335,7 @@ def send_goal_notifications(slack_client):
         else:
             header_text = f":soccer:  *GOALS!*\n{'  ·  '.join(scoring_teams)} both score!"
 
-        match_time = estimate_match_time(match["kickoff_utc"], match["status"])
+        match_time = estimate_match_time(match["kickoff_utc"], match["status"], display_clock)
         score_text = (
             f"*{home(match['home_team'])} {curr_home} - {curr_away} {away(match['away_team'])}*"
             f"  ·  _{match_time}_"
@@ -286,6 +346,9 @@ def send_goal_notifications(slack_client):
             _block_divider(),
             _block_section(score_text),
         ]
+
+        if scorer_lines:
+            blocks.append(_block_context("\n".join(scorer_lines)))
 
         prob_line = format_prob_line(match)
         ud_line = format_underdog_line(match)
@@ -337,6 +400,107 @@ def send_goal_notifications(slack_client):
             logger.error("Failed to post goal notification for match %s: %s", match["id"], exc)
 
 
+# ─── Halftime notifications ───────────────────────────────────────────────────
+
+def send_halftime_notifications(slack_client):
+    """Post a halftime summary when a match reaches half time."""
+    channel = os.getenv("RESULTS_CHANNEL")
+    if not channel:
+        return
+
+    with db.db() as conn:
+        matches = db.get_matches_needing_halftime_notification(conn)
+
+    for match in matches:
+        curr_home = match["home_score"] or 0
+        curr_away = match["away_score"] or 0
+
+        score_text = (
+            f"*{home(match['home_team'])} {curr_home} - {curr_away} {away(match['away_team'])}*"
+            f"  ·  _{stage_label(match['stage'])}_"
+        )
+
+        blocks = [
+            _block_section("⏸  *HALF TIME*"),
+            _block_divider(),
+            _block_section(score_text),
+        ]
+
+        # Goal scorers from ESPN
+        try:
+            summary = fetch_match_summary(match["external_id"])
+            goals = get_goal_scorers(summary)
+            stats = get_match_stats(summary)
+            if goals:
+                home_goals = [g for g in goals if g["team_name"] == match["home_team"]]
+                away_goals = [g for g in goals if g["team_name"] == match["away_team"]]
+                goal_lines = []
+                if home_goals:
+                    goal_lines.append(flag(match["home_team"]) + "  " + "  ·  ".join(
+                        f"*{g['scorer_name']}* {g['minute']}" for g in home_goals
+                    ))
+                if away_goals:
+                    goal_lines.append(flag(match["away_team"]) + "  " + "  ·  ".join(
+                        f"*{g['scorer_name']}* {g['minute']}" for g in away_goals
+                    ))
+                if goal_lines:
+                    blocks.append(_block_context("\n".join(goal_lines)))
+            elif curr_home == 0 and curr_away == 0:
+                blocks.append(_block_context("_No goals in the first half_"))
+            if stats and stats.get("home_possession"):
+                blocks.append(_block_context(
+                    f":bar_chart:  {match['home_team']} {stats['home_possession']}% poss "
+                    f"·  {stats['home_shots_on_target']} shots on target  ·  "
+                    f"{match['away_team']} {stats['away_possession']}% poss "
+                    f"·  {stats['away_shots_on_target']} shots on target"
+                ))
+        except Exception as exc:
+            logger.warning("Could not fetch ESPN halftime stats: %s", exc)
+
+        # Current prediction standings
+        with db.db() as conn:
+            preds = db.get_match_predictions_all_users(conn, match["id"])
+
+        scorers = []
+        for p in preds:
+            if p["home_score"] is None:
+                continue
+            pts = calculate_points(
+                p["home_score"], p["away_score"],
+                curr_home, curr_away,
+                match["home_team"], match["away_team"],
+                match["stage"],
+                match=match,
+            )
+            if pts > 0:
+                exact = p["home_score"] == curr_home and p["away_score"] == curr_away
+                icon = ":dart:" if exact else ":white_check_mark:"
+                scorers.append((icon, p["slack_user_id"], p["home_score"], p["away_score"], pts))
+
+        if scorers:
+            blocks.append(_block_divider())
+            blocks.append(_block_section("🔮  *Scoring at half time*"))
+            scorer_pairs = [
+                (
+                    f"{icon}  <@{uid}>  `{ph} - {pa}`",
+                    f"*+{points_label(pts)}*",
+                )
+                for icon, uid, ph, pa, pts in sorted(scorers, key=lambda x: -x[4])
+            ]
+            blocks.extend(_block_fields(scorer_pairs))
+
+        try:
+            _post_attachment(
+                slack_client, channel,
+                f"Half Time: {match['home_team']} {curr_home} - {curr_away} {match['away_team']}",
+                "#ff8f00", blocks,
+            )
+            with db.db() as conn:
+                db.mark_halftime_notified(conn, match["id"])
+        except Exception as exc:
+            logger.error("Failed to post halftime notification for match %s: %s", match["id"], exc)
+
+
 # ─── Kickoff announcements ────────────────────────────────────────────────────
 
 def send_kickoff_announcements(slack_client):
@@ -353,12 +517,16 @@ def send_kickoff_announcements(slack_client):
             all_preds = db.get_match_predictions_all_users(conn, match["id"])
             enrolled = db.get_enrolled_users(conn)
 
+        venue_parts = [stage_label(match["stage"]), format_kickoff(match["kickoff_utc"])]
+        if match["venue_name"]:
+            venue_parts.append(f"{match['venue_name']}, {match['venue_city'] or ''}")
+
         blocks = [
             _block_section("⚽  *KICKOFF!*"),
             _block_divider(),
             _block_section(
                 f"*{vs(match['home_team'], match['away_team'])}*\n"
-                f"{stage_label(match['stage'])}  ·  {format_kickoff(match['kickoff_utc'])}"
+                + "  ·  ".join(venue_parts)
             ),
         ]
 
@@ -880,7 +1048,13 @@ def start_scheduler(slack_client=None) -> BackgroundScheduler:
 
     scheduler = BackgroundScheduler(timezone="UTC")
 
+    # Full fixture import on startup, then live polling every interval
+    sync_all_fixtures()
+
     scheduler.add_job(sync_fixtures, "interval", seconds=poll_interval, id="sync_fixtures")
+
+    # Full re-import every 6 hours to pick up new knockout matches
+    scheduler.add_job(sync_all_fixtures, "interval", hours=6, id="sync_all_fixtures")
 
     def sync_odds_job():
         with db.db() as conn:
@@ -899,6 +1073,10 @@ def start_scheduler(slack_client=None) -> BackgroundScheduler:
     scheduler.add_job(
         lambda: send_goal_notifications(slack_client),
         "interval", seconds=poll_interval, id="goal_notifications",
+    )
+    scheduler.add_job(
+        lambda: send_halftime_notifications(slack_client),
+        "interval", seconds=poll_interval, id="halftime_notifications",
     )
     scheduler.add_job(
         lambda: send_kickoff_announcements(slack_client),

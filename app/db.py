@@ -111,6 +111,16 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_predictions_match ON predictions(match_id);
             CREATE INDEX IF NOT EXISTS idx_predictions_user  ON predictions(slack_user_id);
         """)
+        # Migrations for new columns — safe to run on existing DB
+        for col, definition in [
+            ("halftime_notified", "INTEGER NOT NULL DEFAULT 0"),
+            ("venue_name",        "TEXT"),
+            ("venue_city",        "TEXT"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE matches ADD COLUMN {col} {definition}")
+            except Exception:
+                pass  # Column already exists
 
 
 # ── User / enrolment queries ───────────────────────────────────────────────────
@@ -136,6 +146,41 @@ def get_enrolled_users(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 # ── Match queries ──────────────────────────────────────────────────────────────
+
+def upsert_match_espn(conn: sqlite3.Connection, m: dict):
+    """Upsert a match from ESPN. Matches by (home_team, away_team, kickoff_date) first,
+    falling back to external_id insert for new knockout matches with TBD teams resolved."""
+    kickoff_date = m["kickoff_utc"][:10]
+    rows = conn.execute("""
+        UPDATE matches SET
+            external_id    = :external_id,
+            status         = :status,
+            home_score     = :home_score,
+            away_score     = :away_score,
+            winner         = :winner,
+            duration       = :duration,
+            matchday       = COALESCE(:matchday, matchday),
+            venue_name     = COALESCE(:venue_name, venue_name),
+            venue_city     = COALESCE(:venue_city, venue_city)
+        WHERE home_team = :home_team AND away_team = :away_team
+          AND substr(kickoff_utc, 1, 10) = :kickoff_date
+    """, {**m, "kickoff_date": kickoff_date})
+
+    if rows.rowcount == 0:
+        conn.execute("""
+            INSERT OR IGNORE INTO matches (
+                external_id, home_team, away_team, kickoff_utc, stage, matchday,
+                status, home_score, away_score, winner, duration,
+                et_home, et_away, penalties_home, penalties_away,
+                venue_name, venue_city
+            ) VALUES (
+                :external_id, :home_team, :away_team, :kickoff_utc, :stage, :matchday,
+                :status, :home_score, :away_score, :winner, :duration,
+                :et_home, :et_away, :penalties_home, :penalties_away,
+                :venue_name, :venue_city
+            )
+        """, m)
+
 
 def upsert_match(conn: sqlite3.Connection, m: dict):
     conn.execute("""
@@ -509,6 +554,18 @@ def get_matches_needing_kickoff_announcement(conn: sqlite3.Connection) -> list[s
 
 def mark_kickoff_announced(conn: sqlite3.Connection, match_id: int):
     conn.execute("UPDATE matches SET kickoff_announced = 1 WHERE id = ?", (match_id,))
+
+
+def get_matches_needing_halftime_notification(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("""
+        SELECT * FROM matches
+        WHERE status = 'HALFTIME' AND halftime_notified = 0
+        ORDER BY kickoff_utc ASC
+    """).fetchall()
+
+
+def mark_halftime_notified(conn: sqlite3.Connection, match_id: int):
+    conn.execute("UPDATE matches SET halftime_notified = 1 WHERE id = ?", (match_id,))
 
 
 # ── Kickoff reminder queries ───────────────────────────────────────────────────

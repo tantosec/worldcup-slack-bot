@@ -32,7 +32,7 @@ ZEBRA_WILDCARD_MULTIPLIER = 2
 
 ZEBRA_BOLD = [
     "Australia", "South Korea", "Canada", "Ecuador", "Austria",
-    "Norway", "Sweden", "Turkey", "Iran", "Ghana", "Ivory Coast",
+    "Norway", "Sweden", "Türkiye", "Iran", "Ghana", "Ivory Coast",
     "Algeria", "Tunisia", "Egypt", "Scotland", "Czechia", "Saudi Arabia",
 ]
 

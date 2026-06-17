@@ -1,5 +1,5 @@
 # FIFA World Rankings — June 11, 2026 (last official update before WC 2026).
-# Lower number = better ranked. Keys must match team names returned by football-data.org exactly.
+# Lower number = better ranked. Keys match ESPN team displayName values.
 #
 # Sources (all confirmed identical numbers):
 #   https://inside.fifa.com/fifa-world-ranking/men
@@ -24,7 +24,7 @@ RANKINGS: dict[str, int] = {
     "Japan":           18,
     "Switzerland":     19,
     "Iran":            20,
-    "Turkey":          22,
+    "Türkiye":         22,
     "Ecuador":         23,
     "Austria":         24,
     "South Korea":     25,
@@ -48,7 +48,7 @@ RANKINGS: dict[str, int] = {
     "Saudi Arabia":    61,
     "Jordan":          63,
     "Bosnia-Herzegovina": 64,
-    "Cape Verde Islands": 67,
+    "Cape Verde":      67,
     "Ghana":           73,
     "Curaçao":         82,
     "Haiti":           83,
