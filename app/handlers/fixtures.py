@@ -1,4 +1,6 @@
+import os
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from app import db
 from app.espn import fetch_match_summary, get_goal_scorers, get_match_stats
@@ -87,15 +89,20 @@ def _build_fixtures_blocks(slack_user_id: str, show_all_upcoming: bool = False) 
     if not live_matches and not upcoming:
         return None
 
-    today_utc = datetime.now(timezone.utc).date().isoformat()
-    today_upcoming = [m for m in upcoming if m["kickoff_utc"][:10] == today_utc]
-    later_upcoming = [m for m in upcoming if m["kickoff_utc"][:10] > today_utc]
+    _tz = ZoneInfo(os.getenv("DISPLAY_TIMEZONE", "Australia/Sydney"))
+    today_local = datetime.now(tz=_tz).date().isoformat()
+    # Compare kickoff UTC dates converted to display timezone
+    def _kickoff_local_date(m) -> str:
+        return datetime.fromisoformat(m["kickoff_utc"].replace("Z", "+00:00")).astimezone(_tz).date().isoformat()
+
+    today_upcoming = [m for m in upcoming if _kickoff_local_date(m) == today_local]
+    later_upcoming = [m for m in upcoming if _kickoff_local_date(m) > today_local]
 
     # If nothing is on today, surface the next day's matches so the list isn't empty
     if not today_upcoming and later_upcoming and not show_all_upcoming:
-        next_day = later_upcoming[0]["kickoff_utc"][:10]
-        today_upcoming = [m for m in later_upcoming if m["kickoff_utc"][:10] == next_day]
-        later_upcoming = [m for m in later_upcoming if m["kickoff_utc"][:10] > next_day]
+        next_day = _kickoff_local_date(later_upcoming[0])
+        today_upcoming = [m for m in later_upcoming if _kickoff_local_date(m) == next_day]
+        later_upcoming = [m for m in later_upcoming if _kickoff_local_date(m) > next_day]
 
     blocks = [
         {"type": "header", "text": {"type": "plain_text", "text": "FIFA World Cup 2026 — Fixtures", "emoji": True}},
