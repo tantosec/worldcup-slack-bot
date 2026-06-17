@@ -115,6 +115,8 @@ def init_db():
         for col, definition in [
             ("halftime_notified",      "INTEGER NOT NULL DEFAULT 0"),
             ("second_half_notified",   "INTEGER NOT NULL DEFAULT 0"),
+            ("extra_time_notified",    "INTEGER NOT NULL DEFAULT 0"),
+            ("shootout_notified",      "INTEGER NOT NULL DEFAULT 0"),
             ("venue_name",             "TEXT"),
             ("venue_city",             "TEXT"),
         ]:
@@ -579,6 +581,30 @@ def get_matches_needing_second_half_notification(conn: sqlite3.Connection) -> li
 
 def mark_second_half_notified(conn: sqlite3.Connection, match_id: int):
     conn.execute("UPDATE matches SET second_half_notified = 1 WHERE id = ?", (match_id,))
+
+
+def get_matches_needing_extra_time_notification(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("""
+        SELECT * FROM matches
+        WHERE status = 'IN_PLAY' AND duration = 'EXTRA_TIME' AND extra_time_notified = 0
+        ORDER BY kickoff_utc ASC
+    """).fetchall()
+
+
+def mark_extra_time_notified(conn: sqlite3.Connection, match_id: int):
+    conn.execute("UPDATE matches SET extra_time_notified = 1 WHERE id = ?", (match_id,))
+
+
+def get_matches_needing_shootout_notification(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("""
+        SELECT * FROM matches
+        WHERE status = 'IN_PLAY' AND duration = 'PENALTY_SHOOTOUT' AND shootout_notified = 0
+        ORDER BY kickoff_utc ASC
+    """).fetchall()
+
+
+def mark_shootout_notified(conn: sqlite3.Connection, match_id: int):
+    conn.execute("UPDATE matches SET shootout_notified = 1 WHERE id = ?", (match_id,))
 
 
 # ── Kickoff reminder queries ───────────────────────────────────────────────────

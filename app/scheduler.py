@@ -574,6 +574,120 @@ def send_second_half_notifications(slack_client):
             logger.error("Failed to post second half notification for match %s: %s", match["id"], exc)
 
 
+# ─── Extra time notifications ─────────────────────────────────────────────────
+
+def send_extra_time_notifications(slack_client):
+    """Post an extra time alert when a knockout match goes beyond 90 minutes."""
+    channel = os.getenv("RESULTS_CHANNEL")
+    if not channel:
+        return
+
+    with db.db() as conn:
+        matches = db.get_matches_needing_extra_time_notification(conn)
+
+    for match in matches:
+        curr_home = match["home_score"] or 0
+        curr_away = match["away_score"] or 0
+
+        blocks = [
+            _block_section(":stopwatch:  *EXTRA TIME*"),
+            _block_divider(),
+            _block_section(
+                f"*{home(match['home_team'])} {curr_home} - {curr_away} {away(match['away_team'])}*"
+                f"  ·  _{stage_label(match['stage'])}_"
+            ),
+        ]
+
+        try:
+            summary = fetch_match_summary(match["external_id"])
+            goals = get_goal_scorers(summary)
+            if goals:
+                home_goals = [g for g in goals if g["team_name"] == match["home_team"]]
+                away_goals = [g for g in goals if g["team_name"] == match["away_team"]]
+                goal_lines = []
+                if home_goals:
+                    goal_lines.append(flag(match["home_team"]) + "  " + "  ·  ".join(
+                        f":soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}" for g in home_goals
+                    ))
+                if away_goals:
+                    goal_lines.append(flag(match["away_team"]) + "  " + "  ·  ".join(
+                        f":soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}" for g in away_goals
+                    ))
+                if goal_lines:
+                    blocks.append(_block_context("\n".join(goal_lines)))
+            elif curr_home == 0 and curr_away == 0:
+                blocks.append(_block_context("_Still goalless after 90 minutes_"))
+        except Exception as exc:
+            logger.warning("Could not fetch ESPN extra time details: %s", exc)
+
+        try:
+            _post_attachment(
+                slack_client, channel,
+                f"Extra Time: {match['home_team']} {curr_home} - {curr_away} {match['away_team']}",
+                "#7b1fa2", blocks,
+            )
+            with db.db() as conn:
+                db.mark_extra_time_notified(conn, match["id"])
+        except Exception as exc:
+            logger.error("Failed to post extra time notification for match %s: %s", match["id"], exc)
+
+
+# ─── Penalty shootout notifications ──────────────────────────────────────────
+
+def send_shootout_notifications(slack_client):
+    """Post a penalty shootout alert when a match goes to spot kicks."""
+    channel = os.getenv("RESULTS_CHANNEL")
+    if not channel:
+        return
+
+    with db.db() as conn:
+        matches = db.get_matches_needing_shootout_notification(conn)
+
+    for match in matches:
+        curr_home = match["home_score"] or 0
+        curr_away = match["away_score"] or 0
+
+        blocks = [
+            _block_section(":goal_net:  *PENALTY SHOOTOUT*"),
+            _block_divider(),
+            _block_section(
+                f"*{home(match['home_team'])} {curr_home} - {curr_away} {away(match['away_team'])}*"
+                f"  ·  _{stage_label(match['stage'])}_ _(AET)_"
+            ),
+        ]
+
+        try:
+            summary = fetch_match_summary(match["external_id"])
+            goals = get_goal_scorers(summary)
+            if goals:
+                home_goals = [g for g in goals if g["team_name"] == match["home_team"]]
+                away_goals = [g for g in goals if g["team_name"] == match["away_team"]]
+                goal_lines = []
+                if home_goals:
+                    goal_lines.append(flag(match["home_team"]) + "  " + "  ·  ".join(
+                        f":soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}" for g in home_goals
+                    ))
+                if away_goals:
+                    goal_lines.append(flag(match["away_team"]) + "  " + "  ·  ".join(
+                        f":soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}" for g in away_goals
+                    ))
+                if goal_lines:
+                    blocks.append(_block_context("\n".join(goal_lines)))
+        except Exception as exc:
+            logger.warning("Could not fetch ESPN shootout details: %s", exc)
+
+        try:
+            _post_attachment(
+                slack_client, channel,
+                f"Penalty Shootout: {match['home_team']} {curr_home} - {curr_away} {match['away_team']}",
+                "#c62828", blocks,
+            )
+            with db.db() as conn:
+                db.mark_shootout_notified(conn, match["id"])
+        except Exception as exc:
+            logger.error("Failed to post shootout notification for match %s: %s", match["id"], exc)
+
+
 # ─── Kickoff announcements ────────────────────────────────────────────────────
 
 def send_kickoff_announcements(slack_client):
@@ -1122,6 +1236,8 @@ def live_updates(slack_client=None):
     send_goal_notifications(slack_client)
     send_halftime_notifications(slack_client)
     send_second_half_notifications(slack_client)
+    send_extra_time_notifications(slack_client)
+    send_shootout_notifications(slack_client)
 
 
 def start_scheduler(slack_client=None) -> BackgroundScheduler:
