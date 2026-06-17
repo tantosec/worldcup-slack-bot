@@ -17,7 +17,7 @@ from app.handlers.enroll import handle_enroll
 from app.handlers.picks import open_picks_modal, handle_picks_submit, CALLBACK_ID as PICKS_CALLBACK_ID, SCORER_ACTION
 from app.players import search as search_players
 from app.handlers.leaderboard import handle_leaderboard
-from app.handlers.fixtures import handle_fixtures
+from app.handlers.fixtures import handle_fixtures, handle_fixtures_show_more, SHOW_MORE_ACTION
 from app.handlers.results import handle_results
 from app.handlers.scoring import handle_scoring
 from app.handlers.me import handle_me
@@ -119,6 +119,11 @@ def cmd_leaderboard(ack, respond, client, body):
 def cmd_fixtures(ack, respond, body):
     ack()
     handle_fixtures(respond, body)
+
+
+@app.action(SHOW_MORE_ACTION)
+def action_fixtures_show_more(ack, respond, body):
+    handle_fixtures_show_more(ack, respond, body)
 
 
 # ── Slash command: /results ───────────────────────────────────────────────────

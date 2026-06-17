@@ -1,8 +1,12 @@
+from datetime import datetime, timezone
+
 from app import db
 from app.espn import fetch_match_summary, get_goal_scorers, get_match_stats
 from app.flags import home, away, vs
 from app.football import format_kickoff, format_score, is_kickoff_passed, stage_label, estimate_match_time
 from app.odds import format_prob_line, format_underdog_line
+
+SHOW_MORE_ACTION = "fixtures_show_more"
 
 
 def _section(text: str) -> dict:
@@ -43,12 +47,32 @@ def _enrich_live(match: dict) -> tuple:
         return [], None, None
 
 
-def handle_fixtures(respond, body):
-    slack_user_id = body["user_id"]
+def _upcoming_blocks(matches: list, user_preds: dict) -> list:
+    blocks = []
+    for m in matches:
+        pred = user_preds.get(m["id"])
+        pick_line = (
+            f":pencil: Your pick: *{pred['home_score']} - {pred['away_score']}*"
+            if pred
+            else ":crystal_ball: _No prediction yet — use `/predict`_"
+        )
+        venue = _venue_line(m)
+        venue_suffix = f"  ·  {venue}" if venue else ""
+        blocks.append(_section(
+            f"*{vs(m['home_team'], m['away_team'])}*\n"
+            f"{format_kickoff(m['kickoff_utc'])}  ·  {stage_label(m['stage'])}{venue_suffix}\n"
+            f"{pick_line}"
+        ))
+        context_parts = [x for x in [format_prob_line(m), format_underdog_line(m, action=True)] if x]
+        for part in context_parts:
+            blocks.append(_context(part))
+    return blocks
 
+
+def _build_fixtures_blocks(slack_user_id: str, show_all_upcoming: bool = False) -> list | None:
     with db.db() as conn:
         live_matches = db.get_live_matches(conn)
-        upcoming = db.get_upcoming_matches(conn, limit=8)
+        upcoming = db.get_upcoming_matches(conn, limit=20)
         user_preds = {
             p["match_id"]: p
             for p in db.get_user_predictions_with_matches(conn, slack_user_id)
@@ -59,13 +83,23 @@ def handle_fixtures(respond, body):
         }
 
     if not live_matches and not upcoming:
-        respond(response_type="ephemeral", text="No fixtures found. The fixture list may not be loaded yet.")
-        return
+        return None
+
+    today_utc = datetime.now(timezone.utc).date().isoformat()
+    today_upcoming = [m for m in upcoming if m["kickoff_utc"][:10] == today_utc]
+    later_upcoming = [m for m in upcoming if m["kickoff_utc"][:10] > today_utc]
+
+    # If nothing is on today, surface the next day's matches so the list isn't empty
+    if not today_upcoming and later_upcoming and not show_all_upcoming:
+        next_day = later_upcoming[0]["kickoff_utc"][:10]
+        today_upcoming = [m for m in later_upcoming if m["kickoff_utc"][:10] == next_day]
+        later_upcoming = [m for m in later_upcoming if m["kickoff_utc"][:10] > next_day]
 
     blocks = [
         {"type": "header", "text": {"type": "plain_text", "text": "FIFA World Cup 2026 — Fixtures", "emoji": True}},
     ]
 
+    # ── Live matches ─────────────────────────────────────────────────────────────
     if live_matches:
         blocks += [_divider(), _section(":red_circle:  *LIVE NOW*"), _divider()]
 
@@ -118,26 +152,43 @@ def handle_fixtures(respond, body):
             if no_pick:
                 blocks.append(_context(":ghost:  No pick: " + "  ".join(f"<@{uid}>" for uid in no_pick)))
 
-    if upcoming:
+    # ── Upcoming matches ──────────────────────────────────────────────────────────
+    visible = today_upcoming + (later_upcoming if show_all_upcoming else [])
+    if visible or later_upcoming:
         blocks += [_divider(), _section(":calendar:  *Upcoming*"), _divider()]
+        blocks += _upcoming_blocks(visible, user_preds)
 
-        for m in upcoming:
-            pred = user_preds.get(m["id"])
-            pick_line = (
-                f":pencil: Your pick: *{pred['home_score']} - {pred['away_score']}*"
-                if pred
-                else ":crystal_ball: _No prediction yet — use `/predict`_"
-            )
-            venue = _venue_line(m)
-            venue_suffix = f"  ·  {venue}" if venue else ""
-            blocks.append(_section(
-                f"*{vs(m['home_team'], m['away_team'])}*\n"
-                f"{format_kickoff(m['kickoff_utc'])}  ·  {stage_label(m['stage'])}{venue_suffix}\n"
-                f"{pick_line}"
-            ))
+        if not show_all_upcoming and later_upcoming:
+            blocks.append({
+                "type": "actions",
+                "elements": [{
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": f"Show {len(later_upcoming)} more upcoming matches",
+                        "emoji": True,
+                    },
+                    "action_id": SHOW_MORE_ACTION,
+                }],
+            })
 
-            context_parts = [x for x in [format_prob_line(m), format_underdog_line(m, action=True)] if x]
-            for part in context_parts:
-                blocks.append(_context(part))
+    return blocks
 
+
+def handle_fixtures(respond, body):
+    slack_user_id = body["user_id"]
+    blocks = _build_fixtures_blocks(slack_user_id)
+    if blocks is None:
+        respond(response_type="ephemeral", text="No fixtures found. The fixture list may not be loaded yet.")
+        return
     respond(response_type="ephemeral", blocks=blocks, text="FIFA World Cup 2026 — Fixtures")
+
+
+def handle_fixtures_show_more(ack, respond, body):
+    ack()
+    slack_user_id = body["user"]["id"]
+    blocks = _build_fixtures_blocks(slack_user_id, show_all_upcoming=True)
+    if blocks is None:
+        respond(response_type="ephemeral", text="No fixtures found.")
+        return
+    respond(replace_original=True, blocks=blocks, text="FIFA World Cup 2026 — Fixtures")
