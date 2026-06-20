@@ -179,13 +179,15 @@ _ESPN_TZ = ZoneInfo("America/New_York")
 
 
 def fetch_live_matches() -> list[dict]:
-    """Fetch today + next 2 days using ESPN's own timezone (America/New_York).
+    """Fetch yesterday through next 2 days using ESPN's own timezone (America/New_York).
 
     ESPN keys scoreboard dates by Eastern time regardless of match location,
     so we must use that timezone to build the correct date strings.
+    Yesterday is included so any match missed during a DNS outage or date
+    rollover is corrected on the next poll after connectivity recovers.
     """
     today_espn = datetime.now(tz=_ESPN_TZ).date()
-    return fetch_matches_for_dates([today_espn + timedelta(days=i) for i in range(3)])
+    return fetch_matches_for_dates([today_espn + timedelta(days=i) for i in range(-1, 3)])
 
 
 def fetch_match_summary(event_id: int) -> dict:
