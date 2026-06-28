@@ -1,7 +1,7 @@
 import os
 from app.scoring import (
     TOURNAMENT_PICK_POINTS, SEMI_PICK_POINTS,
-    GROUP_GOALS_WIN_POINTS, GROUP_GOALS_NEAR_POINTS, GROUP_GOALS_NEAR_RANGE,
+    GROUP_GOALS_WIN_POINTS, GROUP_GOALS_NEAR_POINTS,
     ZEBRA_POINTS, ZEBRA_WILDCARD_MULTIPLIER, ZEBRA_BOLD, ZEBRA_WILDCARD,
 )
 
@@ -69,7 +69,7 @@ SCORING_BLOCKS = [
             "text": (
                 f"*:goal_net: Group Stage Total Goals* _(optional)_\n"
                 f"Guess total goals across all 72 group matches\n"
-                f"Closest → *{GROUP_GOALS_WIN_POINTS} pts*  ·  Within ±{GROUP_GOALS_NEAR_RANGE} → *{GROUP_GOALS_NEAR_POINTS} pts*"
+                f"1st closest → *{GROUP_GOALS_WIN_POINTS} pts*  ·  2nd closest → *{GROUP_GOALS_NEAR_POINTS} pts*"
             ),
         },
     },
