@@ -33,7 +33,7 @@ def format_score(match) -> str:
         ph = match["penalties_home"]
         pa = match["penalties_away"]
         if ph is not None and pa is not None:
-            return f"{h} ({ph}) - ({pa}) {a}"
+            return f"({ph}) {h} - {a} ({pa})"
         return f"{h} - {a}"
 
     if dur == "EXTRA_TIME":
@@ -47,9 +47,18 @@ def format_score(match) -> str:
 
 
 def format_score_note(match) -> str:
-    """Return a suffix note like ' _(AET)_' or ' _(pens)_', or empty string."""
+    """Return a suffix note like ' _(AET)_', or empty string.
+
+    For PENALTY_SHOOTOUT: returns empty when pen scores are shown inline
+    in format_score (i.e. penalties_home is set), otherwise ' _(pens)_'.
+    """
     dur = match["duration"] if hasattr(match, "keys") else match.get("duration", "REGULAR")
     if dur == "PENALTY_SHOOTOUT":
+        try:
+            if match["penalties_home"] is not None:
+                return ""
+        except (KeyError, IndexError):
+            pass
         return " _(pens)_"
     if dur == "EXTRA_TIME":
         return " _(AET)_"

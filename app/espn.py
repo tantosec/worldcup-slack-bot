@@ -293,3 +293,34 @@ def fetch_top_scorer() -> str | None:
     except Exception as exc:
         logger.error("ESPN: failed to fetch top scorer: %s", exc)
     return None
+
+
+def get_penalty_scores(summary: dict) -> tuple[int | None, int | None]:
+    """Extract penalty shootout scores from match summary header linescores.
+
+    ESPN stores period-by-period scores in competitor.linescores as
+    [{'displayValue': N}, ...].  The penalty period is always the last entry
+    (index 4 for AET→pens, index 2 for direct pens).  Confirmed via
+    Copa America 2024 Argentina vs Ecuador (4-2 on pens).
+    Returns (home_pen_score, away_pen_score) or (None, None).
+    """
+    header = summary.get("header") or {}
+    if isinstance(header, list):
+        header = header[0] if header else {}
+    comps = header.get("competitions", [])
+    if not comps:
+        return None, None
+    comp = comps[0]
+    competitors = comp.get("competitors", [])
+    home_comp = next((c for c in competitors if c.get("homeAway") == "home"), None)
+    away_comp = next((c for c in competitors if c.get("homeAway") == "away"), None)
+    if not home_comp or not away_comp:
+        return None, None
+    home_ls = home_comp.get("linescores", [])
+    away_ls = away_comp.get("linescores", [])
+    if len(home_ls) >= 3 and len(away_ls) >= 3:
+        try:
+            return int(home_ls[-1]["displayValue"]), int(away_ls[-1]["displayValue"])
+        except (KeyError, ValueError, TypeError):
+            pass
+    return None, None

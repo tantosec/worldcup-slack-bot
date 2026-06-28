@@ -386,6 +386,31 @@ def get_leaderboard(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """).fetchall()
 
 
+def get_leaderboard_with_breakdown(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Leaderboard with individual tournament pick category columns exposed for phase wraps."""
+    return conn.execute("""
+        SELECT
+            u.slack_user_id,
+            COALESCE(SUM(p.points), 0)
+                + COALESCE(tp.winner_points, 0)
+                + COALESCE(tp.scorer_points, 0)
+                + COALESCE(tp.zebra_points, 0)
+                + COALESCE(tp.semi_points, 0)
+                + COALESCE(tp.group_goals_points, 0)      AS total_points,
+            SUM(CASE WHEN p.points >= 9 THEN 1 ELSE 0 END) AS exact_scores,
+            COALESCE(tp.winner_points, 0)      AS winner_points,
+            COALESCE(tp.scorer_points, 0)      AS scorer_points,
+            COALESCE(tp.zebra_points, 0)       AS zebra_points,
+            COALESCE(tp.semi_points, 0)        AS semi_points,
+            COALESCE(tp.group_goals_points, 0) AS group_goals_points
+        FROM users u
+        LEFT JOIN predictions p       ON p.slack_user_id = u.slack_user_id
+        LEFT JOIN tournament_picks tp ON tp.slack_user_id = u.slack_user_id
+        GROUP BY u.slack_user_id
+        ORDER BY total_points DESC, exact_scores DESC
+    """).fetchall()
+
+
 # ── Tournament pick queries ────────────────────────────────────────────────────
 
 def upsert_tournament_pick(
@@ -895,6 +920,20 @@ def get_user_upcoming_predictions(conn: sqlite3.Connection, slack_user_id: str) 
         WHERE m.status IN ('SCHEDULED', 'TIMED')
         ORDER BY m.kickoff_utc ASC
     """, (slack_user_id,)).fetchall()
+
+
+def get_last32_fixture_count(conn: sqlite3.Connection) -> int:
+    """Count confirmed LAST_32 fixtures in DB (0–16). Used to distinguish 'pending' from 'eliminated'."""
+    return conn.execute(
+        "SELECT COUNT(*) FROM matches WHERE stage = 'LAST_32'"
+    ).fetchone()[0]
+
+
+def update_match_penalties(conn: sqlite3.Connection, match_id: int, pen_home: int, pen_away: int):
+    conn.execute(
+        "UPDATE matches SET penalties_home = ?, penalties_away = ? WHERE id = ?",
+        (pen_home, pen_away, match_id),
+    )
 
 
 def get_last_odds_sync(conn) -> str | None:
