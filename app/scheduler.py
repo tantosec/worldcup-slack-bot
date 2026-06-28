@@ -236,10 +236,22 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None) -
         lb_pairs = []
         for i, row in enumerate(leaderboard[:10], start=1):
             medal = medals.get(i, f"`{i}.`")
-            lb_pairs.append((
-                f"{medal}  <@{row['slack_user_id']}>",
-                f"*{row['total_points']} pts*",
-            ))
+            exact = row["exact_scores"] or 0
+            bonus_parts = []
+            if row["winner_points"]:
+                bonus_parts.append(f":first_place_medal:+{row['winner_points']}")
+            if row["scorer_points"]:
+                bonus_parts.append(f":athletic_shoe:+{row['scorer_points']}")
+            if row["zebra_points"]:
+                bonus_parts.append(f":zebra_face:+{row['zebra_points']}")
+            if row["semi_points"]:
+                bonus_parts.append(f":four:+{row['semi_points']}")
+            if row["group_goals_points"]:
+                bonus_parts.append(f":goal_net:+{row['group_goals_points']}")
+            right = f"*{row['total_points']} pts*  ·  :dart: {exact}"
+            if bonus_parts:
+                right += "\n" + "  ".join(bonus_parts)
+            lb_pairs.append((f"{medal}  <@{row['slack_user_id']}>", right))
         blocks.extend(_block_fields(lb_pairs))
 
     _post_attachment(
@@ -1040,8 +1052,7 @@ def _build_zebra_blocks(wrap_stage: str, picks) -> list:
             pts = p["zebra_points"] or 0
             left = f"<@{p['slack_user_id']}>  {flag(zebra)} *{zebra}*  _{tier_label}_"
             if is_group:
-                team_matches = db.get_team_knockout_stages(conn, zebra)
-                if team_matches:
+                if db.team_has_last32_fixture(conn, zebra):
                     right = "✅ Advancing to R32"
                 elif last32_count < 16:
                     right = "⏳ Status TBD"
@@ -1239,15 +1250,15 @@ def send_phase_wrap(slack_client):
                 exact = row["exact_scores"] or 0
                 parts = []
                 if row["winner_points"]:
-                    parts.append(f"Winner: {row['winner_points']}pts")
+                    parts.append(f":first_place_medal: Winner: +{row['winner_points']}")
                 if row["scorer_points"]:
-                    parts.append(f"Golden Boot: {row['scorer_points']}pts")
+                    parts.append(f":athletic_shoe: Golden Boot: +{row['scorer_points']}")
                 if row["zebra_points"]:
-                    parts.append(f"Zebra: {row['zebra_points']}pts")
+                    parts.append(f":zebra_face: Zebra: +{row['zebra_points']}")
                 if row["semi_points"]:
-                    parts.append(f"Semis: {row['semi_points']}pts")
+                    parts.append(f":four: Semis: +{row['semi_points']}")
                 if row["group_goals_points"]:
-                    parts.append(f"Group goals: {row['group_goals_points']}pts")
+                    parts.append(f":goal_net: Group goals: +{row['group_goals_points']}")
                 breakdown = "  ·  ".join(parts) if parts else "no bonus points"
                 blocks.append(_block_section(
                     f"{medal}  <@{row['slack_user_id']}>  *{row['total_points']} pts*  ·  :dart: {exact} exact\n"
@@ -1273,16 +1284,16 @@ def send_phase_wrap(slack_client):
                 exact = row["exact_scores"] or 0
                 bonus_parts = []
                 if row["winner_points"]:
-                    bonus_parts.append(f"W:{row['winner_points']}")
+                    bonus_parts.append(f":first_place_medal:+{row['winner_points']}")
                 if row["scorer_points"]:
-                    bonus_parts.append(f"GB:{row['scorer_points']}")
+                    bonus_parts.append(f":athletic_shoe:+{row['scorer_points']}")
                 if row["zebra_points"]:
-                    bonus_parts.append(f"Z:{row['zebra_points']}")
+                    bonus_parts.append(f":zebra_face:+{row['zebra_points']}")
                 if row["semi_points"]:
-                    bonus_parts.append(f"SF:{row['semi_points']}")
+                    bonus_parts.append(f":four:+{row['semi_points']}")
                 if row["group_goals_points"]:
-                    bonus_parts.append(f"GG:{row['group_goals_points']}")
-                bonus = "  (" + " ".join(bonus_parts) + ")" if bonus_parts else ""
+                    bonus_parts.append(f":goal_net:+{row['group_goals_points']}")
+                bonus = "  " + "  ".join(bonus_parts) if bonus_parts else ""
                 lb_pairs.append((
                     f"{medal}  <@{row['slack_user_id']}>",
                     f"*{row['total_points']} pts*  ·  :dart: {exact}{bonus}",

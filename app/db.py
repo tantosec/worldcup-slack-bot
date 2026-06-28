@@ -377,7 +377,12 @@ def get_leaderboard(conn: sqlite3.Connection) -> list[sqlite3.Row]:
                 + COALESCE(tp.semi_points, 0)
                 + COALESCE(tp.group_goals_points, 0)            AS total_points,
             SUM(CASE WHEN p.points >= 9  THEN 1 ELSE 0 END)   AS exact_scores,
-            SUM(CASE WHEN p.points IN (5, 8, 10, 11, 12, 15, 16, 22, 28, 33) THEN 1 ELSE 0 END) AS upsets_called
+            SUM(CASE WHEN p.points IN (5, 8, 10, 11, 12, 15, 16, 22, 28, 33) THEN 1 ELSE 0 END) AS upsets_called,
+            COALESCE(tp.winner_points, 0)      AS winner_points,
+            COALESCE(tp.scorer_points, 0)      AS scorer_points,
+            COALESCE(tp.zebra_points, 0)       AS zebra_points,
+            COALESCE(tp.semi_points, 0)        AS semi_points,
+            COALESCE(tp.group_goals_points, 0) AS group_goals_points
         FROM users u
         LEFT JOIN predictions p      ON p.slack_user_id = u.slack_user_id
         LEFT JOIN tournament_picks tp ON tp.slack_user_id = u.slack_user_id
@@ -387,28 +392,7 @@ def get_leaderboard(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 def get_leaderboard_with_breakdown(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    """Leaderboard with individual tournament pick category columns exposed for phase wraps."""
-    return conn.execute("""
-        SELECT
-            u.slack_user_id,
-            COALESCE(SUM(p.points), 0)
-                + COALESCE(tp.winner_points, 0)
-                + COALESCE(tp.scorer_points, 0)
-                + COALESCE(tp.zebra_points, 0)
-                + COALESCE(tp.semi_points, 0)
-                + COALESCE(tp.group_goals_points, 0)      AS total_points,
-            SUM(CASE WHEN p.points >= 9 THEN 1 ELSE 0 END) AS exact_scores,
-            COALESCE(tp.winner_points, 0)      AS winner_points,
-            COALESCE(tp.scorer_points, 0)      AS scorer_points,
-            COALESCE(tp.zebra_points, 0)       AS zebra_points,
-            COALESCE(tp.semi_points, 0)        AS semi_points,
-            COALESCE(tp.group_goals_points, 0) AS group_goals_points
-        FROM users u
-        LEFT JOIN predictions p       ON p.slack_user_id = u.slack_user_id
-        LEFT JOIN tournament_picks tp ON tp.slack_user_id = u.slack_user_id
-        GROUP BY u.slack_user_id
-        ORDER BY total_points DESC, exact_scores DESC
-    """).fetchall()
+    return get_leaderboard(conn)
 
 
 # ── Tournament pick queries ────────────────────────────────────────────────────
@@ -560,6 +544,15 @@ def get_team_knockout_stages(conn: sqlite3.Connection, team_name: str) -> list[s
           AND stage NOT IN ('GROUP_STAGE')
           AND status = 'FINISHED'
     """, (team_name, team_name)).fetchall()
+
+
+def team_has_last32_fixture(conn: sqlite3.Connection, team_name: str) -> bool:
+    """True if the team has a confirmed LAST_32 fixture (any status)."""
+    row = conn.execute(
+        "SELECT COUNT(*) FROM matches WHERE stage = 'LAST_32' AND (home_team = ? OR away_team = ?)",
+        (team_name, team_name),
+    ).fetchone()
+    return row[0] > 0
 
 
 def semi_picks_already_scored(conn: sqlite3.Connection) -> bool:

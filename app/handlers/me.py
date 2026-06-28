@@ -73,6 +73,20 @@ def handle_me(respond, body, client):
     match_pts = stats["match_points"] or 0
     tournament_pts = (total_points or 0) - match_pts
 
+    # Per-category tournament pick breakdown (only show scored categories)
+    bonus_fields = []
+    if picks:
+        if picks["winner_points"] is not None:
+            bonus_fields.append({"type": "mrkdwn", "text": f":first_place_medal: *Winner*\n{picks['winner_points']} pts"})
+        if picks["scorer_points"] is not None:
+            bonus_fields.append({"type": "mrkdwn", "text": f":athletic_shoe: *Golden Boot*\n{picks['scorer_points']} pts"})
+        if picks["zebra_points"] is not None:
+            bonus_fields.append({"type": "mrkdwn", "text": f":zebra_face: *Zebra*\n{picks['zebra_points']} pts"})
+        if picks["semi_points"] is not None:
+            bonus_fields.append({"type": "mrkdwn", "text": f":four: *Semis*\n{picks['semi_points']} pts"})
+        if picks["group_goals_points"] is not None:
+            bonus_fields.append({"type": "mrkdwn", "text": f":goal_net: *Group goals*\n{picks['group_goals_points']} pts"})
+
     blocks = [
         {"type": "header", "text": {"type": "plain_text", "text": f"📊 {header_name} World Cup 2026 Stats", "emoji": True}},
         {
@@ -85,6 +99,8 @@ def handle_me(respond, body, client):
             ],
         },
     ]
+    if bonus_fields:
+        blocks.append({"type": "section", "fields": bonus_fields})
 
     # ── Tournament Picks ──────────────────────────────────────────────────────
     blocks += [_divider(), _section("🔮  *Tournament Picks*")]
