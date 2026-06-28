@@ -66,7 +66,7 @@ def sync_fixtures():
 
 
 def sync_all_fixtures():
-    """Full tournament fixture import from ESPN (run on startup)."""
+    """Sync today-onwards fixtures from ESPN — picks up newly confirmed knockout teams."""
     logger.info("Full fixture import from ESPN…")
     matches = fetch_all_matches()
     if not matches:
@@ -84,6 +84,7 @@ def score_finished_matches(slack_client=None):
     with db.db() as conn:
         unscored = db.get_finished_unscored_matches(conn)
 
+    scored_any = False
     for match in unscored:
         logger.info("Scoring match %s: %s %s–%s %s",
                     match["external_id"], match["home_team"],
@@ -119,6 +120,12 @@ def score_finished_matches(slack_client=None):
 
         with db.db() as conn:
             db.mark_match_scored(conn, match["id"])
+        scored_any = True
+
+    if scored_any:
+        # A match just finished — ESPN may now have real team names for the next
+        # round's fixtures (replacing TBD placeholders). Sync immediately.
+        sync_all_fixtures()
 
 
 def _post_result_summary(slack_client, match, results: list, leaderboard=None):
@@ -1245,9 +1252,9 @@ def start_scheduler(slack_client=None) -> BackgroundScheduler:
 
     scheduler = BackgroundScheduler(timezone="UTC")
 
-    # Full fixture import on startup, then every 6h to pick up knockout teams
+    # Full fixture import on startup, then every 1h to pick up knockout teams
     sync_all_fixtures()
-    scheduler.add_job(sync_all_fixtures, "interval", hours=6, id="sync_all_fixtures")
+    scheduler.add_job(sync_all_fixtures, "interval", hours=1, id="sync_all_fixtures")
 
     def sync_odds_job():
         with db.db() as conn:

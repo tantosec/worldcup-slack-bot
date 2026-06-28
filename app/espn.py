@@ -167,10 +167,16 @@ def fetch_matches_for_dates(dates: list[date]) -> list[dict]:
     return matches
 
 
-def fetch_all_matches() -> list[dict]:
-    """Fetch every WC 2026 match (June 12 – July 19)."""
-    start = date(2026, 6, 12)
+def fetch_all_matches(from_date: date | None = None) -> list[dict]:
+    """Fetch WC 2026 matches from from_date (default: today) through July 19.
+
+    Skipping past dates avoids redundant API calls — finished matches are already
+    scored in the DB. Pass from_date=date(2026, 6, 12) for a full historical import.
+    """
+    start = max(from_date or datetime.now(tz=_ESPN_TZ).date(), date(2026, 6, 12))
     end = date(2026, 7, 19)
+    if start > end:
+        return []
     dates = [start + timedelta(days=i) for i in range((end - start).days + 1)]
     return fetch_matches_for_dates(dates)
 
@@ -179,15 +185,18 @@ _ESPN_TZ = ZoneInfo("America/New_York")
 
 
 def fetch_live_matches() -> list[dict]:
-    """Fetch yesterday through next 2 days using ESPN's own timezone (America/New_York).
+    """Fetch yesterday through next 7 days using ESPN's own timezone (America/New_York).
 
     ESPN keys scoreboard dates by Eastern time regardless of match location,
     so we must use that timezone to build the correct date strings.
     Yesterday is included so any match missed during a DNS outage or date
     rollover is corrected on the next poll after connectivity recovers.
+    The 7-day lookahead ensures newly-confirmed knockout fixtures (once ESPN
+    replaces TBD placeholders with real team names) are picked up within
+    seconds rather than waiting for the hourly full sync.
     """
     today_espn = datetime.now(tz=_ESPN_TZ).date()
-    return fetch_matches_for_dates([today_espn + timedelta(days=i) for i in range(-1, 3)])
+    return fetch_matches_for_dates([today_espn + timedelta(days=i) for i in range(-1, 8)])
 
 
 def fetch_match_summary(event_id: int) -> dict:
