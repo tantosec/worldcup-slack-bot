@@ -62,9 +62,11 @@ def _match_blocks(matches: list[dict]) -> list[dict]:
         has_pred = pred_home is not None and pred_away is not None
 
         # Match header: name + kickoff + existing pick
+        venue_parts = [x for x in [m["venue_name"], m["venue_city"]] if x]
+        venue_str = ("  ·  " + ", ".join(venue_parts)) if venue_parts else ""
         match_text = (
             f"*{vs(m['home_team'], m['away_team'])}*\n"
-            f":clock3: {format_kickoff(m['kickoff_utc'])}  ·  {stage_label(m['stage'])}"
+            f":clock3: {format_kickoff(m['kickoff_utc'])}  ·  {stage_label(m['stage'])}{venue_str}"
         )
         if has_pred:
             match_text += f"  ·  _your pick: {pred_home} - {pred_away}_"
