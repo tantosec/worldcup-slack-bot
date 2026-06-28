@@ -756,8 +756,9 @@ def get_stage_stats(conn: sqlite3.Connection, stage: str) -> dict:
 def get_upcoming_stages(conn: sqlite3.Connection) -> list[str]:
     """Stages that have at least one SCHEDULED/TIMED match."""
     rows = conn.execute("""
-        SELECT DISTINCT stage FROM matches
+        SELECT stage FROM matches
         WHERE status IN ('SCHEDULED', 'TIMED')
+        GROUP BY stage
         ORDER BY MIN(kickoff_utc) ASC
     """).fetchall()
     return [r["stage"] for r in rows]
