@@ -1486,9 +1486,14 @@ def score_zebra_picks_job():
                 continue
             matches = db.get_team_knockout_stages(conn, zebra)
             if not matches:
-                # No knockout matches — if group stage is done, team was eliminated in groups
                 if group_done:
-                    db.update_zebra_points(conn, pick["slack_user_id"], 0)
+                    is_wildcard = pick["zebra_tier"] == "WILDCARD"
+                    if db.team_has_last32_fixture(conn, zebra):
+                        # Qualified to R32 but match not finished yet — award minimum points
+                        pts = calc_zebra_pts("LAST_32", is_wildcard)
+                        db.update_zebra_points(conn, pick["slack_user_id"], pts)
+                    else:
+                        db.update_zebra_points(conn, pick["slack_user_id"], 0)
                 continue
             is_wildcard = pick["zebra_tier"] == "WILDCARD"
             stage_key = _team_furthest_stage_for(zebra, matches)
