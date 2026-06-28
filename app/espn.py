@@ -22,6 +22,8 @@ _STATUS_MAP = {
     "STATUS_FULL_TIME":   "FINISHED",
     "STATUS_EXTRA_TIME":  "IN_PLAY",
     "STATUS_PENALTIES":   "IN_PLAY",
+    "STATUS_FINAL_AET":   "FINISHED",
+    "STATUS_FINAL_PEN":   "FINISHED",
     "STATUS_POSTPONED":   "POSTPONED",
     "STATUS_CANCELLED":   "CANCELLED",
 }
@@ -36,15 +38,47 @@ _STAGE_MAP = {
     "final":         "FINAL",
 }
 
-# Detect ET/pens from status name for duration field
-_ET_STATUSES = {"STATUS_EXTRA_TIME"}
-_PEN_STATUSES = {"STATUS_PENALTIES"}
+# Detect ET/pens from status name (live and finished variants)
+_ET_STATUSES = {"STATUS_EXTRA_TIME", "STATUS_FINAL_AET"}
+_PEN_STATUSES = {"STATUS_PENALTIES", "STATUS_FINAL_PEN"}
 
 
 def _get(path: str, params: dict | None = None) -> dict:
     resp = requests.get(f"{BASE_URL}{path}", params=params, timeout=10)
     resp.raise_for_status()
     return resp.json()
+
+
+def get_90min_scores(summary: dict) -> tuple:
+    """Return (home_90, away_90) goals scored in regular 90 minutes from linescores.
+
+    Linescores[0] = 1st half, [1] = 2nd half (stop at -1 separator or after 2 periods).
+    Returns (None, None) if linescores are unavailable.
+    """
+    header = summary.get("header", {})
+    comp = (header.get("competitions") or [{}])[0]
+    home_comp = next((c for c in comp.get("competitors", []) if c.get("homeAway") == "home"), None)
+    away_comp = next((c for c in comp.get("competitors", []) if c.get("homeAway") == "away"), None)
+    if not home_comp or not away_comp:
+        return None, None
+
+    def _sum_first_two(linescores):
+        if not linescores or len(linescores) < 2:
+            return None
+        total, count = 0, 0
+        for ls in linescores:
+            val = int(ls.get("displayValue", -1))
+            if val < 0:
+                break
+            total += val
+            count += 1
+            if count == 2:
+                break
+        return total if count == 2 else None
+
+    h90 = _sum_first_two(home_comp.get("linescores"))
+    a90 = _sum_first_two(away_comp.get("linescores"))
+    return h90, a90
 
 
 def _matchday(kickoff_utc: str) -> int | None:

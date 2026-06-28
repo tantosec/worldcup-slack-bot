@@ -125,7 +125,7 @@ def handle_me(respond, body, client):
             pts = p["points"] or 0
             pred_str = f"{p['pred_home']} - {p['pred_away']}"
 
-            if p["pred_home"] == p["home_score"] and p["pred_away"] == p["away_score"]:
+            if p["pred_home"] == p["act_home"] and p["pred_away"] == p["act_away"]:
                 icon = ":dart:"
             elif pts > 0:
                 icon = ":white_check_mark:"

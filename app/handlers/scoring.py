@@ -22,7 +22,8 @@ SCORING_BLOCKS = [
                 "*Match Predictions*\n"
                 ":dart: Exact score → *9 pts*\n"
                 ":white_check_mark: Correct result (W/D/L) → *3 pts*\n"
-                ":zap: Upset bonus → *+2 pts* _(predicted the underdog wins — and they did!)_"
+                ":zap: Upset bonus → *+2 pts* _(predicted the underdog wins — and they did!)_\n"
+                "_Knockout matches: scored on 90-minute result. Extra time & penalties don't count._"
             ),
         },
     },

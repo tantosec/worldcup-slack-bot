@@ -23,6 +23,7 @@ _SCORING_RUNDOWN = (
     "  :white_check_mark: Correct result → *3 pts*\n"
     "  :zap: Upset bonus → *+2 pts*\n"
     "  Stage multipliers: ×1.5 (R32/R16) · ×2 (QF) · ×2.5 (SF) · ×3 (Final)\n"
+    "  _Knockouts: scored on 90-min result — ET & penalties don't count_\n"
     "\n"
     f"*:trophy: Tournament Picks* _({TOURNAMENT_PICK_POINTS} pts each if correct)_\n"
     "  :first_place_medal: World Cup Winner\n"

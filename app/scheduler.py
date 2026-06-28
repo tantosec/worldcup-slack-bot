@@ -8,7 +8,7 @@ from app.flags import flag, home, away, vs
 from app.espn import (
     fetch_live_matches, fetch_all_matches, fetch_match_summary,
     get_goal_scorers, get_match_stats, get_second_half_kickoff, get_display_clock, fetch_top_scorer,
-    get_penalty_scores,
+    get_penalty_scores, get_90min_scores,
 )
 from app.football import format_kickoff, format_score, format_score_note, stage_label, estimate_match_time
 from app.odds import fetch_and_store_odds, sync_odds_if_stale, format_prob_line, format_underdog_line
@@ -91,6 +91,23 @@ def score_finished_matches(slack_client=None):
                     match["external_id"], match["home_team"],
                     match["home_score"], match["away_score"], match["away_team"])
 
+        # Knockout matches scored on 90-minute result only (not AET/pens)
+        act_home = match["home_score"]
+        act_away = match["away_score"]
+        if match["duration"] in ("EXTRA_TIME", "PENALTY_SHOOTOUT"):
+            try:
+                _sum = fetch_match_summary(match["external_id"])
+                h90, a90 = get_90min_scores(_sum) if _sum else (None, None)
+                if h90 is not None:
+                    act_home, act_away = h90, a90
+                    with db.db() as conn:
+                        db.update_match_90min_scores(conn, match["id"], h90, a90)
+            except Exception as exc:
+                logger.warning("Could not fetch 90-min scores for match %s: %s", match["id"], exc)
+        match = dict(match)
+        match["_act_home"] = act_home
+        match["_act_away"] = act_away
+
         with db.db() as conn:
             predictions = db.get_predictions_for_match(conn, match["id"])
 
@@ -98,7 +115,7 @@ def score_finished_matches(slack_client=None):
             for pred in predictions:
                 pts = calculate_points(
                     pred["home_score"], pred["away_score"],
-                    match["home_score"], match["away_score"],
+                    act_home, act_away,
                     match["home_team"], match["away_team"],
                     match["stage"],
                     match=match,
@@ -108,10 +125,11 @@ def score_finished_matches(slack_client=None):
 
         with db.db() as conn:
             leaderboard = db.get_leaderboard(conn)
+            confirmed_semis = set(db.get_confirmed_semi_teams(conn))
 
         if slack_client:
             try:
-                _post_result_summary(slack_client, match, results, leaderboard)
+                _post_result_summary(slack_client, match, results, leaderboard, confirmed_semis)
                 logger.info("Posted result summary for match %s", match["id"])
             except Exception as exc:
                 logger.error("Failed to post result summary for match %s, will retry: %s", match["id"], exc)
@@ -129,7 +147,7 @@ def score_finished_matches(slack_client=None):
         sync_all_fixtures()
 
 
-def _post_result_summary(slack_client, match, results: list, leaderboard=None) -> dict:
+def _post_result_summary(slack_client, match, results: list, leaderboard=None, confirmed_semis=None) -> dict:
     channel = os.getenv("RESULTS_CHANNEL")
     if not channel:
         return dict(match)
@@ -152,6 +170,11 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None) -
                 match["penalties_away"] = pen_away
                 with db.db() as conn:
                     db.update_match_penalties(conn, match["id"], pen_home, pen_away)
+        if match["duration"] in ("EXTRA_TIME", "PENALTY_SHOOTOUT"):
+            h90, a90 = get_90min_scores(summary)
+            if h90 is not None:
+                match["_reg_home"] = h90
+                match["_reg_away"] = a90
     except Exception as exc:
         logger.warning("Could not fetch ESPN stats for full-time: %s", exc)
 
@@ -174,6 +197,11 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None) -
         _block_divider(),
         _block_section(score_text),
     ]
+
+    reg_home = match.get("_reg_home")
+    reg_away = match.get("_reg_away")
+    if reg_home is not None:
+        blocks.append(_block_context(f"_90 min: {reg_home} - {reg_away} · Predictions scored on 90-minute result_"))
 
     prob_line = format_prob_line(match)
     ud_line = format_underdog_line(match)
@@ -210,9 +238,11 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None) -
 
     if results_sorted:
         pred_pairs = []
+        act_h = match.get("_act_home", match["home_score"])
+        act_a = match.get("_act_away", match["away_score"])
         for user_id, pred_home, pred_away, pts in results_sorted:
             pred_str = f"{pred_home} - {pred_away}"
-            if pts > 0 and pred_home == match["home_score"] and pred_away == match["away_score"]:
+            if pts > 0 and pred_home == act_h and pred_away == act_a:
                 icon = ":dart:"
                 label = "Exact!"
             elif pts > 0:
@@ -237,20 +267,10 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None) -
         for i, row in enumerate(leaderboard[:10], start=1):
             medal = medals.get(i, f"`{i}.`")
             exact = row["exact_scores"] or 0
-            bonus_parts = []
-            if row["winner_points"]:
-                bonus_parts.append(f":first_place_medal: _(+{row['winner_points']})_")
-            if row["scorer_points"]:
-                bonus_parts.append(f":athletic_shoe: _(+{row['scorer_points']})_")
-            if row["zebra_points"]:
-                bonus_parts.append(f":zebra_face: _(+{row['zebra_points']})_")
-            if row["semi_points"]:
-                bonus_parts.append(f":four: _(+{row['semi_points']})_")
-            if row["group_goals_points"]:
-                bonus_parts.append(f":goal_net: _(+{row['group_goals_points']})_")
             right = f"*{row['total_points']} pts*  ·  :dart: {exact}"
-            if bonus_parts:
-                right += "\n" + "  ·  ".join(bonus_parts)
+            bonus = _format_bonus_icons(row, confirmed_semis or set())
+            if bonus:
+                right += "\n" + bonus
             lb_pairs.append((f"{medal}  <@{row['slack_user_id']}>", right))
         blocks.extend(_block_fields(lb_pairs))
 
@@ -266,10 +286,12 @@ def _dm_points_earned(slack_client, user_id: str, match, pred_home: int, pred_aw
     predicted = f"{pred_home} - {pred_away}"
     duration = match["duration"] or "REGULAR"
 
+    act_h = match.get("_act_home", match["home_score"])
+    act_a = match.get("_act_away", match["away_score"])
     if pts == 0:
         result_icon = ":x:"
         result_text = f"Picked `{predicted}` — no points this time"
-    elif pred_home == match["home_score"] and pred_away == match["away_score"]:
+    elif pred_home == act_h and pred_away == act_a:
         result_icon = ":dart:"
         result_text = f"Picked `{predicted}` — exact score!"
     else:
@@ -344,38 +366,16 @@ def send_goal_notifications(slack_client):
 
         new_home = curr_home - prev_home
         new_away = curr_away - prev_away
-        new_total = new_home + new_away
 
-        scoring_teams = []
-        if new_home > 0:
-            scoring_teams.append(f"{flag(match['home_team'])} {match['home_team']}")
-        if new_away > 0:
-            scoring_teams.append(f"{flag(match['away_team'])} {match['away_team']}")
-
-        # Fetch scorer names from ESPN
-        scorer_lines = []
+        # Fetch summary once for scorer names and display clock
+        all_goals = []
         display_clock = None
         try:
             summary = fetch_match_summary(match["external_id"])
             all_goals = get_goal_scorers(summary)
             display_clock = get_display_clock(summary)
-            if new_home > 0:
-                home_goals = [g for g in all_goals if g["team_name"] == match["home_team"]]
-                for g in home_goals[-new_home:]:
-                    scorer_lines.append(f"{flag(match['home_team'])}  :soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}")
-            if new_away > 0:
-                away_goals = [g for g in all_goals if g["team_name"] == match["away_team"]]
-                for g in away_goals[-new_away:]:
-                    scorer_lines.append(f"{flag(match['away_team'])}  :soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}")
         except Exception as exc:
             logger.warning("Could not fetch ESPN goal details: %s", exc)
-
-        if new_total == 1:
-            header_text = f":soccer:  *GOOOOOOOAAAALLLLL!*\n{scoring_teams[0]} scores!"
-        elif len(scoring_teams) == 1:
-            header_text = f":soccer:  *GOOOOOOOAAAALLLLL!*\n{scoring_teams[0]} scores {new_total}!"
-        else:
-            header_text = f":soccer:  *GOALS!*\n{'  ·  '.join(scoring_teams)} both score!"
 
         match_time = estimate_match_time(match["kickoff_utc"], match["status"], display_clock)
         score_text = (
@@ -383,64 +383,101 @@ def send_goal_notifications(slack_client):
             f"  ·  _{match_time}_"
         )
 
-        blocks = [
-            _block_section(header_text),
-            _block_divider(),
-            _block_section(score_text),
+        sides = [
+            (match["home_team"], new_home),
+            (match["away_team"], new_away),
         ]
 
-        if scorer_lines:
-            blocks.append(_block_context("\n".join(scorer_lines)))
-
-        prob_line = format_prob_line(match)
-        ud_line = format_underdog_line(match)
-        if prob_line:
-            blocks.append(_block_context(prob_line))
-        if ud_line:
-            blocks.append(_block_context(ud_line))
-
-        with db.db() as conn:
-            preds = db.get_match_predictions_all_users(conn, match["id"])
-
-        scorers = []
-        for p in preds:
-            if p["home_score"] is None:
+        # VAR disallowals first (score went DOWN)
+        for team_name, delta in sides:
+            if delta >= 0:
                 continue
-            pts = calculate_points(
-                p["home_score"], p["away_score"],
-                curr_home, curr_away,
-                match["home_team"], match["away_team"],
-                match["stage"],
-                match=match,
-            )
-            if pts > 0:
-                exact = p["home_score"] == curr_home and p["away_score"] == curr_away
-                icon = ":dart:" if exact else ":white_check_mark:"
-                scorers.append((icon, p["slack_user_id"], p["home_score"], p["away_score"], pts))
-
-        if scorers:
-            blocks.append(_block_divider())
-            blocks.append(_block_section("🔮  *Scoring right now*"))
-            scorer_pairs = [
-                (
-                    f"{icon}  <@{uid}>  `{ph} - {pa}`",
-                    f"*+{points_label(pts)}*",
-                )
-                for icon, uid, ph, pa, pts in sorted(scorers, key=lambda x: -x[4])
+            blocks = [
+                _block_section(
+                    f":no_entry_sign:  *Goal disallowed — VAR*\n"
+                    f"{flag(team_name)} {team_name}'s goal has been ruled out"
+                ),
+                _block_divider(),
+                _block_section(score_text),
             ]
-            blocks.extend(_block_fields(scorer_pairs))
+            try:
+                _post_attachment(slack_client, channel,
+                    f"Goal disallowed: {team_name}", "#e53935", blocks)
+            except Exception as exc:
+                logger.error("Failed to post VAR notification for match %s: %s", match["id"], exc)
 
-        try:
-            _post_attachment(
-                slack_client, channel,
-                f"Goal! {match['home_team']} {curr_home} - {curr_away} {match['away_team']}",
-                "#f4c430", blocks,
-            )
+        # One goal notification per team (score went UP)
+        for team_name, delta in sides:
+            if delta <= 0:
+                continue
+
+            scorer_lines = []
+            team_goals = [g for g in all_goals if g["team_name"] == team_name]
+            for g in team_goals[-delta:]:
+                scorer_lines.append(
+                    f"{flag(team_name)}  :soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}"
+                )
+
+            if delta == 1:
+                header_text = f":soccer:  *GOOOOOOOAAAALLLLL!*\n{flag(team_name)} {team_name} scores!"
+            else:
+                header_text = f":soccer:  *GOOOOOOOAAAALLLLL!*\n{flag(team_name)} {team_name} scores {delta}!"
+
+            blocks = [
+                _block_section(header_text),
+                _block_divider(),
+                _block_section(score_text),
+            ]
+            if scorer_lines:
+                blocks.append(_block_context("\n".join(scorer_lines)))
+
+            prob_line = format_prob_line(match)
+            ud_line = format_underdog_line(match)
+            if prob_line:
+                blocks.append(_block_context(prob_line))
+            if ud_line:
+                blocks.append(_block_context(ud_line))
+
             with db.db() as conn:
-                db.mark_score_notified(conn, match["id"], curr_home, curr_away)
-        except Exception as exc:
-            logger.error("Failed to post goal notification for match %s: %s", match["id"], exc)
+                preds = db.get_match_predictions_all_users(conn, match["id"])
 
+            scorers = []
+            for p in preds:
+                if p["home_score"] is None:
+                    continue
+                pts = calculate_points(
+                    p["home_score"], p["away_score"],
+                    curr_home, curr_away,
+                    match["home_team"], match["away_team"],
+                    match["stage"],
+                    match=match,
+                )
+                if pts > 0:
+                    exact = p["home_score"] == curr_home and p["away_score"] == curr_away
+                    icon = ":dart:" if exact else ":white_check_mark:"
+                    scorers.append((icon, p["slack_user_id"], p["home_score"], p["away_score"], pts))
+
+            if scorers:
+                blocks.append(_block_divider())
+                blocks.append(_block_section("🔮  *Scoring right now*"))
+                scorer_pairs = [
+                    (f"{icon}  <@{uid}>  `{ph} - {pa}`", f"*+{points_label(pts)}*")
+                    for icon, uid, ph, pa, pts in sorted(scorers, key=lambda x: -x[4])
+                ]
+                blocks.extend(_block_fields(scorer_pairs))
+
+            try:
+                _post_attachment(
+                    slack_client, channel,
+                    f"Goal! {match['home_team']} {curr_home} - {curr_away} {match['away_team']}",
+                    "#f4c430", blocks,
+                )
+            except Exception as exc:
+                logger.error("Failed to post goal notification for match %s: %s", match["id"], exc)
+
+        # Always update notified score to avoid reprocessing this state
+        with db.db() as conn:
+            db.mark_score_notified(conn, match["id"], curr_home, curr_away)
 
 # ─── Halftime notifications ───────────────────────────────────────────────────
 
@@ -1061,12 +1098,17 @@ def _build_zebra_blocks(wrap_stage: str, picks) -> list:
             else:
                 team_matches = db.get_team_knockout_stages(conn, zebra)
                 stage_key = _team_furthest_stage_for(zebra, team_matches) if team_matches else None
+                still_alive = _team_won_wrap_stage(zebra, wrap_stage, team_matches or [])
                 if stage_key == "WINNER":
                     right = f"*{pts} pts*  :trophy: Champions!"
+                elif stage_key and still_alive:
+                    next_label = _NEXT_PHASE_LABEL.get(wrap_stage, "next round")
+                    right = f"*{pts} pts*  ✅ Advancing to {next_label}"
                 elif stage_key:
-                    right = f"*{pts} pts*  ·  _{_STAGE_DISPLAY.get(stage_key, stage_key)}_"
+                    elim_label = _STAGE_DISPLAY.get(stage_key, stage_key)
+                    right = f"*{pts} pts*  ❌ Eliminated in {elim_label}"
                 else:
-                    right = f"*{pts} pts*  ·  _Eliminated_"
+                    right = f"*{pts} pts*  ❌ Eliminated"
             pairs.append((left, right))
     if pairs:
         blocks.extend(_block_fields(pairs))
@@ -1154,6 +1196,33 @@ def _build_golden_boot_blocks(picks, scorer_name: str | None) -> list:
     return blocks
 
 
+def _format_bonus_icons(row, confirmed_semis=None) -> str:
+    """Condensed bonus icon line for leaderboard rows, e.g. ':zebra_face: _(🇦🇺 +10)_'."""
+    parts = []
+    if row["winner_points"]:
+        w = row["picked_winner"]
+        f = flag(w) + " " if w else ""
+        parts.append(f":first_place_medal: _({f}+{row['winner_points']})_")
+    if row["scorer_points"]:
+        parts.append(f":athletic_shoe: _(+{row['scorer_points']})_")
+    zebra_pts = row["zebra_points"]
+    if zebra_pts is not None:
+        z = row["picked_zebra"]
+        f = flag(z) + " " if z else ""
+        parts.append(f":zebra_face: _({f}+{zebra_pts})_")
+    if row["semi_points"]:
+        if confirmed_semis:
+            correct = [row[f"semi{i}"] for i in range(1, 5)
+                       if row[f"semi{i}"] and row[f"semi{i}"] in confirmed_semis]
+            flags_str = " ".join(flag(t) for t in correct) + " " if correct else ""
+        else:
+            flags_str = ""
+        parts.append(f":four: _({flags_str}+{row['semi_points']})_")
+    if row["group_goals_points"]:
+        parts.append(f":goal_net: _(+{row['group_goals_points']})_")
+    return "  ·  ".join(parts)
+
+
 def send_phase_wrap(slack_client):
     """Post a rich phase-complete summary with full leaderboard once a round is done."""
     channel = os.getenv("RESULTS_CHANNEL")
@@ -1177,9 +1246,10 @@ def send_phase_wrap(slack_client):
         with db.db() as conn:
             matches = db.get_matches_by_stage(conn, stage)
             stats = db.get_stage_stats(conn, stage)
-            leaderboard = db.get_leaderboard_with_breakdown(conn)
+            leaderboard = db.get_leaderboard(conn)
             picks = db.get_all_tournament_picks(conn)
             upcoming_stages = db.get_upcoming_stages(conn)
+            confirmed_semis = set(db.get_confirmed_semi_teams(conn))
 
         header_text = _PHASE_HEADERS.get(stage, f":checkered_flag:  *{stage_label(stage)} Complete!*")
         color = _PHASE_COLORS.get(stage, "#555555")
@@ -1221,8 +1291,9 @@ def send_phase_wrap(slack_client):
                 actual_goals = db.sum_group_goals(conn)
             blocks.extend(_build_group_goals_blocks(picks, actual_goals))
 
-        # ─── Zebra picks (all stages) ───
-        blocks.extend(_build_zebra_blocks(stage, picks))
+        # ─── Zebra picks (all stages except THIRD_PLACE minimal wrap) ───
+        if stage != "THIRD_PLACE":
+            blocks.extend(_build_zebra_blocks(stage, picks))
 
         # ─── Semi-finalist picks (QUARTER_FINALS only) ───
         if stage == "QUARTER_FINALS":
@@ -1248,18 +1319,7 @@ def send_phase_wrap(slack_client):
             for i, row in enumerate(leaderboard, start=1):
                 medal = medals.get(i, f"`{i}.`")
                 exact = row["exact_scores"] or 0
-                parts = []
-                if row["winner_points"]:
-                    parts.append(f":first_place_medal: Winner: _(+{row['winner_points']})_")
-                if row["scorer_points"]:
-                    parts.append(f":athletic_shoe: Golden Boot: _(+{row['scorer_points']})_")
-                if row["zebra_points"]:
-                    parts.append(f":zebra_face: Zebra: _(+{row['zebra_points']})_")
-                if row["semi_points"]:
-                    parts.append(f":four: Semis: _(+{row['semi_points']})_")
-                if row["group_goals_points"]:
-                    parts.append(f":goal_net: Group goals: _(+{row['group_goals_points']})_")
-                breakdown = "  ·  ".join(parts) if parts else "no bonus points"
+                breakdown = _format_bonus_icons(row, confirmed_semis) or "no bonus points"
                 blocks.append(_block_section(
                     f"{medal}  <@{row['slack_user_id']}>  *{row['total_points']} pts*  ·  :dart: {exact} exact\n"
                     f"_{breakdown}_"
@@ -1282,20 +1342,10 @@ def send_phase_wrap(slack_client):
             for i, row in enumerate(leaderboard, start=1):
                 medal = medals.get(i, f"`{i}.`")
                 exact = row["exact_scores"] or 0
-                bonus_parts = []
-                if row["winner_points"]:
-                    bonus_parts.append(f":first_place_medal: _(+{row['winner_points']})_")
-                if row["scorer_points"]:
-                    bonus_parts.append(f":athletic_shoe: _(+{row['scorer_points']})_")
-                if row["zebra_points"]:
-                    bonus_parts.append(f":zebra_face: _(+{row['zebra_points']})_")
-                if row["semi_points"]:
-                    bonus_parts.append(f":four: _(+{row['semi_points']})_")
-                if row["group_goals_points"]:
-                    bonus_parts.append(f":goal_net: _(+{row['group_goals_points']})_")
                 right = f"*{row['total_points']} pts*  ·  :dart: {exact}"
-                if bonus_parts:
-                    right += "\n" + "  ·  ".join(bonus_parts)
+                bonus = _format_bonus_icons(row, confirmed_semis)
+                if bonus:
+                    right += "\n" + bonus
                 lb_pairs.append((f"{medal}  <@{row['slack_user_id']}>", right))
             blocks.extend(_block_fields(lb_pairs))
 
@@ -1361,6 +1411,30 @@ def _team_furthest_stage(matches) -> str | None:
     return best if best in ZEBRA_POINTS or best == "FINAL" else None
 
 
+def _team_won_wrap_stage(team_name: str, wrap_stage: str, matches) -> bool:
+    """True if the team won their match at wrap_stage (i.e. still alive going into the next round)."""
+    for m in matches:
+        if m["stage"] != wrap_stage:
+            continue
+        if m["home_team"] == team_name and m["winner"] == "HOME_TEAM":
+            return True
+        if m["away_team"] == team_name and m["winner"] == "AWAY_TEAM":
+            return True
+    return False
+
+
+def _team_won_wrap_stage(team_name: str, wrap_stage: str, matches) -> bool:
+    """True if the team won their match at wrap_stage (still alive going into the next round)."""
+    for m in matches:
+        if m["stage"] != wrap_stage:
+            continue
+        if m["home_team"] == team_name and m["winner"] == "HOME_TEAM":
+            return True
+        if m["away_team"] == team_name and m["winner"] == "AWAY_TEAM":
+            return True
+    return False
+
+
 def _team_furthest_stage_for(team_name: str, matches) -> str | None:
     from app.scoring import ZEBRA_POINTS
     best_depth = 0
@@ -1402,7 +1476,9 @@ def score_winner_picks_job():
 
 def score_zebra_picks_job():
     from app.scoring import zebra_points as calc_zebra_pts
+    GROUP_STAGE_MATCH_COUNT = 72
     with db.db() as conn:
+        group_done = db.count_finished_group_matches(conn) >= GROUP_STAGE_MATCH_COUNT
         picks = db.get_all_tournament_picks(conn)
         for pick in picks:
             zebra = pick["zebra"]
@@ -1410,6 +1486,9 @@ def score_zebra_picks_job():
                 continue
             matches = db.get_team_knockout_stages(conn, zebra)
             if not matches:
+                # No knockout matches — if group stage is done, team was eliminated in groups
+                if group_done:
+                    db.update_zebra_points(conn, pick["slack_user_id"], 0)
                 continue
             is_wildcard = pick["zebra_tier"] == "WILDCARD"
             stage_key = _team_furthest_stage_for(zebra, matches)

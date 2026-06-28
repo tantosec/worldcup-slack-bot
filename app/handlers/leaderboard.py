@@ -1,18 +1,30 @@
 from app import db
+from app.flags import flag
 
 MEDALS = {1: ":first_place_medal:", 2: ":second_place_medal:", 3: ":third_place_medal:"}
 
 
-def _bonus_icons(row) -> str:
+def _bonus_icons(row, confirmed_semis=None) -> str:
     parts = []
     if row["winner_points"]:
-        parts.append(f":first_place_medal: _(+{row['winner_points']})_")
+        w = row["picked_winner"]
+        f = flag(w) + " " if w else ""
+        parts.append(f":first_place_medal: _({f}+{row['winner_points']})_")
     if row["scorer_points"]:
         parts.append(f":athletic_shoe: _(+{row['scorer_points']})_")
-    if row["zebra_points"]:
-        parts.append(f":zebra_face: _(+{row['zebra_points']})_")
+    zebra_pts = row["zebra_points"]
+    if zebra_pts is not None:
+        z = row["picked_zebra"]
+        f = flag(z) + " " if z else ""
+        parts.append(f":zebra_face: _({f}+{zebra_pts})_")
     if row["semi_points"]:
-        parts.append(f":four: _(+{row['semi_points']})_")
+        if confirmed_semis:
+            correct = [row[f"semi{i}"] for i in range(1, 5)
+                       if row[f"semi{i}"] and row[f"semi{i}"] in confirmed_semis]
+            flags_str = " ".join(flag(t) for t in correct) + " " if correct else ""
+        else:
+            flags_str = ""
+        parts.append(f":four: _({flags_str}+{row['semi_points']})_")
     if row["group_goals_points"]:
         parts.append(f":goal_net: _(+{row['group_goals_points']})_")
     return "  ·  ".join(parts)
@@ -21,6 +33,7 @@ def _bonus_icons(row) -> str:
 def handle_leaderboard(respond, client, body):
     with db.db() as conn:
         rows = db.get_leaderboard(conn)
+        confirmed_semis = db.get_confirmed_semi_teams(conn)
 
     if not rows:
         respond(response_type="ephemeral", text="No predictions scored yet. Check back after the first match!")
@@ -36,7 +49,7 @@ def handle_leaderboard(respond, client, body):
         medal = MEDALS.get(i, f"`{i}.`")
         exact = row["exact_scores"] or 0
         upsets = row["upsets_called"] or 0
-        bonus = _bonus_icons(row)
+        bonus = _bonus_icons(row, confirmed_semis)
         right = f"*{row['total_points']} pts*  ·  :dart: {exact}  ·  :zap: {upsets}"
         if bonus:
             right += f"\n{bonus}"

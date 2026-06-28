@@ -37,10 +37,6 @@ def format_score(match) -> str:
         return f"{h} - {a}"
 
     if dur == "EXTRA_TIME":
-        eth = match["et_home"]
-        eta = match["et_away"]
-        if eth is not None and eta is not None:
-            return f"{h + eth} - {a + eta}"
         return f"{h} - {a}"
 
     return f"{h} - {a}"

@@ -119,6 +119,8 @@ def init_db():
             ("shootout_notified",      "INTEGER NOT NULL DEFAULT 0"),
             ("venue_name",             "TEXT"),
             ("venue_city",             "TEXT"),
+            ("home_score_90",          "INTEGER"),
+            ("away_score_90",          "INTEGER"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE matches ADD COLUMN {col} {definition}")
@@ -380,9 +382,12 @@ def get_leaderboard(conn: sqlite3.Connection) -> list[sqlite3.Row]:
             SUM(CASE WHEN p.points IN (5, 8, 10, 11, 12, 15, 16, 22, 28, 33) THEN 1 ELSE 0 END) AS upsets_called,
             COALESCE(tp.winner_points, 0)      AS winner_points,
             COALESCE(tp.scorer_points, 0)      AS scorer_points,
-            COALESCE(tp.zebra_points, 0)       AS zebra_points,
+            tp.zebra_points                    AS zebra_points,
             COALESCE(tp.semi_points, 0)        AS semi_points,
-            COALESCE(tp.group_goals_points, 0) AS group_goals_points
+            COALESCE(tp.group_goals_points, 0) AS group_goals_points,
+            tp.winner   AS picked_winner,
+            tp.zebra    AS picked_zebra,
+            tp.semi1, tp.semi2, tp.semi3, tp.semi4
         FROM users u
         LEFT JOIN predictions p      ON p.slack_user_id = u.slack_user_id
         LEFT JOIN tournament_picks tp ON tp.slack_user_id = u.slack_user_id
@@ -891,6 +896,8 @@ def get_user_finished_predictions(conn: sqlite3.Connection, slack_user_id: str) 
     return conn.execute("""
         SELECT m.home_team, m.away_team, m.kickoff_utc, m.stage,
                m.home_score, m.away_score,
+               COALESCE(m.home_score_90, m.home_score) AS act_home,
+               COALESCE(m.away_score_90, m.away_score) AS act_away,
                m.duration, m.penalties_home, m.penalties_away,
                m.et_home, m.et_away,
                m.home_odds, m.draw_odds, m.away_odds,
@@ -926,6 +933,13 @@ def update_match_penalties(conn: sqlite3.Connection, match_id: int, pen_home: in
     conn.execute(
         "UPDATE matches SET penalties_home = ?, penalties_away = ? WHERE id = ?",
         (pen_home, pen_away, match_id),
+    )
+
+
+def update_match_90min_scores(conn: sqlite3.Connection, match_id: int, home_90: int, away_90: int):
+    conn.execute(
+        "UPDATE matches SET home_score_90 = ?, away_score_90 = ? WHERE id = ?",
+        (home_90, away_90, match_id),
     )
 
 
