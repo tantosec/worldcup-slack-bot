@@ -125,46 +125,53 @@ def handle_me(respond, body, client):
     blocks += [_divider(), _section(f"⚽  *Match Predictions* ({count_str})")]
 
     if finished_preds:
-        pairs = []
+        # Group by stage preserving kickoff order
+        by_stage = {}
         for p in finished_preds:
-            actual = format_score(p) + format_score_note(p)
-            pts = p["points"] or 0
-            pred_str = f"{p['pred_home']} - {p['pred_away']}"
+            by_stage.setdefault(p["stage"], []).append(p)
 
-            if p["pred_home"] == p["act_home"] and p["pred_away"] == p["act_away"]:
-                icon = ":dart:"
-            elif pts > 0:
-                icon = ":white_check_mark:"
-            else:
-                icon = ":x:"
+        for stage, stage_preds in by_stage.items():
+            blocks.append(_context(f"*{stage_label(stage)}*"))
+            pairs = []
+            for p in stage_preds:
+                actual = format_score(p) + format_score_note(p)
+                pts = p["points"] or 0
+                pred_str = f"{p['pred_home']} - {p['pred_away']}"
 
-            upset_flag = ""
-            if pts > 0:
-                underdog = get_underdog(p)
-                if underdog:
-                    underdog_won = (
-                        (underdog == p["home_team"] and p["home_score"] > p["away_score"]) or
-                        (underdog == p["away_team"] and p["away_score"] > p["home_score"])
-                    )
-                    pred_underdog_wins = (
-                        (underdog == p["home_team"] and p["pred_home"] > p["pred_away"]) or
-                        (underdog == p["away_team"] and p["pred_away"] > p["pred_home"])
-                    )
-                    if underdog_won and pred_underdog_wins:
-                        upset_flag = "  :zap:"
+                if p["pred_home"] == p["act_home"] and p["pred_away"] == p["act_away"]:
+                    icon = ":dart:"
+                elif pts > 0:
+                    icon = ":white_check_mark:"
+                else:
+                    icon = ":x:"
 
-            pairs.append((
-                f"{icon}  {home(p['home_team'])} {actual} {away(p['away_team'])}",
-                f"`{pred_str}`  *+{pts} pts*{upset_flag}",
-            ))
+                upset_flag = ""
+                if pts > 0:
+                    underdog = get_underdog(p)
+                    if underdog:
+                        underdog_won = (
+                            (underdog == p["home_team"] and p["home_score"] > p["away_score"]) or
+                            (underdog == p["away_team"] and p["away_score"] > p["home_score"])
+                        )
+                        pred_underdog_wins = (
+                            (underdog == p["home_team"] and p["pred_home"] > p["pred_away"]) or
+                            (underdog == p["away_team"] and p["pred_away"] > p["pred_home"])
+                        )
+                        if underdog_won and pred_underdog_wins:
+                            upset_flag = "  :zap:"
 
-        for i in range(0, len(pairs), 5):
-            chunk = pairs[i:i + 5]
-            fields = []
-            for left, right in chunk:
-                fields.append({"type": "mrkdwn", "text": left})
-                fields.append({"type": "mrkdwn", "text": right})
-            blocks.append({"type": "section", "fields": fields})
+                pairs.append((
+                    f"{icon}  {home(p['home_team'])} {actual} {away(p['away_team'])}",
+                    f"`{pred_str}`  *+{pts} pts*{upset_flag}",
+                ))
+
+            for i in range(0, len(pairs), 5):
+                chunk = pairs[i:i + 5]
+                fields = []
+                for left, right in chunk:
+                    fields.append({"type": "mrkdwn", "text": left})
+                    fields.append({"type": "mrkdwn", "text": right})
+                blocks.append({"type": "section", "fields": fields})
     else:
         blocks.append(_context("_No finished matches predicted yet._"))
 
