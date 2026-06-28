@@ -4,7 +4,7 @@ from app.flags import flag
 MEDALS = {1: ":first_place_medal:", 2: ":second_place_medal:", 3: ":third_place_medal:"}
 
 
-def _bonus_icons(row, confirmed_semis=None) -> str:
+def _bonus_icons(row, confirmed_semis=None, zebra_statuses=None) -> str:
     parts = []
     if row["winner_points"]:
         w = row["picked_winner"]
@@ -16,7 +16,15 @@ def _bonus_icons(row, confirmed_semis=None) -> str:
     if zebra_pts is not None:
         z = row["picked_zebra"]
         f = flag(z) + " " if z else ""
-        parts.append(f":zebra_face: _({f}+{zebra_pts})_")
+        if zebra_pts == 0:
+            status_icon = " :skull:"
+        elif zebra_statuses and z and zebra_statuses.get(z):
+            status_icon = " :skull:"
+        elif zebra_pts > 0:
+            status_icon = " :fire:"
+        else:
+            status_icon = ""
+        parts.append(f":zebra_face: _({f}+{zebra_pts}{status_icon})_")
     if row["semi_points"]:
         if confirmed_semis:
             correct = [row[f"semi{i}"] for i in range(1, 5)
@@ -34,6 +42,8 @@ def handle_leaderboard(respond, client, body):
     with db.db() as conn:
         rows = db.get_leaderboard(conn)
         confirmed_semis = db.get_confirmed_semi_teams(conn)
+        zebra_teams = {row["picked_zebra"] for row in rows if row["picked_zebra"]}
+        zebra_statuses = {t: db.team_knocked_out(conn, t) for t in zebra_teams}
 
     if not rows:
         respond(response_type="ephemeral", text="No predictions scored yet. Check back after the first match!")
@@ -49,7 +59,7 @@ def handle_leaderboard(respond, client, body):
         medal = MEDALS.get(i, f"`{i}.`")
         exact = row["exact_scores"] or 0
         upsets = row["upsets_called"] or 0
-        bonus = _bonus_icons(row, confirmed_semis)
+        bonus = _bonus_icons(row, confirmed_semis, zebra_statuses)
         right = f"*{row['total_points']} pts*  ·  :dart: {exact}  ·  :zap: {upsets}"
         if bonus:
             right += f"\n{bonus}"

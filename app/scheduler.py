@@ -126,10 +126,12 @@ def score_finished_matches(slack_client=None):
         with db.db() as conn:
             leaderboard = db.get_leaderboard(conn)
             confirmed_semis = set(db.get_confirmed_semi_teams(conn))
+            zebra_teams = {row["picked_zebra"] for row in leaderboard if row["picked_zebra"]}
+            zebra_statuses = {t: db.team_knocked_out(conn, t) for t in zebra_teams}
 
         if slack_client:
             try:
-                _post_result_summary(slack_client, match, results, leaderboard, confirmed_semis)
+                _post_result_summary(slack_client, match, results, leaderboard, confirmed_semis, zebra_statuses)
                 logger.info("Posted result summary for match %s", match["id"])
             except Exception as exc:
                 logger.error("Failed to post result summary for match %s, will retry: %s", match["id"], exc)
@@ -147,7 +149,7 @@ def score_finished_matches(slack_client=None):
         sync_all_fixtures()
 
 
-def _post_result_summary(slack_client, match, results: list, leaderboard=None, confirmed_semis=None) -> dict:
+def _post_result_summary(slack_client, match, results: list, leaderboard=None, confirmed_semis=None, zebra_statuses=None) -> dict:
     channel = os.getenv("RESULTS_CHANNEL")
     if not channel:
         return dict(match)
@@ -268,7 +270,7 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None, c
             medal = medals.get(i, f"`{i}.`")
             exact = row["exact_scores"] or 0
             right = f"*{row['total_points']} pts*  ·  :dart: {exact}"
-            bonus = _format_bonus_icons(row, confirmed_semis or set())
+            bonus = _format_bonus_icons(row, confirmed_semis or set(), zebra_statuses)
             if bonus:
                 right += "\n" + bonus
             lb_pairs.append((f"{medal}  <@{row['slack_user_id']}>", right))
@@ -1196,8 +1198,8 @@ def _build_golden_boot_blocks(picks, scorer_name: str | None) -> list:
     return blocks
 
 
-def _format_bonus_icons(row, confirmed_semis=None) -> str:
-    """Condensed bonus icon line for leaderboard rows, e.g. ':zebra_face: _(🇦🇺 +10)_'."""
+def _format_bonus_icons(row, confirmed_semis=None, zebra_statuses=None) -> str:
+    """Condensed bonus icon line for leaderboard rows, e.g. ':zebra_face: _(🇦🇺 +10 🔥)_'."""
     parts = []
     if row["winner_points"]:
         w = row["picked_winner"]
@@ -1209,7 +1211,15 @@ def _format_bonus_icons(row, confirmed_semis=None) -> str:
     if zebra_pts is not None:
         z = row["picked_zebra"]
         f = flag(z) + " " if z else ""
-        parts.append(f":zebra_face: _({f}+{zebra_pts})_")
+        if zebra_pts == 0:
+            status_icon = " :skull:"
+        elif zebra_statuses and z and zebra_statuses.get(z):
+            status_icon = " :skull:"
+        elif zebra_pts > 0:
+            status_icon = " :fire:"
+        else:
+            status_icon = ""
+        parts.append(f":zebra_face: _({f}+{zebra_pts}{status_icon})_")
     if row["semi_points"]:
         if confirmed_semis:
             correct = [row[f"semi{i}"] for i in range(1, 5)
@@ -1250,6 +1260,8 @@ def send_phase_wrap(slack_client):
             picks = db.get_all_tournament_picks(conn)
             upcoming_stages = db.get_upcoming_stages(conn)
             confirmed_semis = set(db.get_confirmed_semi_teams(conn))
+            zebra_teams = {row["picked_zebra"] for row in leaderboard if row["picked_zebra"]}
+            zebra_statuses = {t: db.team_knocked_out(conn, t) for t in zebra_teams}
 
         header_text = _PHASE_HEADERS.get(stage, f":checkered_flag:  *{stage_label(stage)} Complete!*")
         color = _PHASE_COLORS.get(stage, "#555555")
@@ -1319,7 +1331,7 @@ def send_phase_wrap(slack_client):
             for i, row in enumerate(leaderboard, start=1):
                 medal = medals.get(i, f"`{i}.`")
                 exact = row["exact_scores"] or 0
-                breakdown = _format_bonus_icons(row, confirmed_semis) or "no bonus points"
+                breakdown = _format_bonus_icons(row, confirmed_semis, zebra_statuses) or "no bonus points"
                 blocks.append(_block_section(
                     f"{medal}  <@{row['slack_user_id']}>  *{row['total_points']} pts*  ·  :dart: {exact} exact\n"
                     f"_{breakdown}_"
@@ -1343,7 +1355,7 @@ def send_phase_wrap(slack_client):
                 medal = medals.get(i, f"`{i}.`")
                 exact = row["exact_scores"] or 0
                 right = f"*{row['total_points']} pts*  ·  :dart: {exact}"
-                bonus = _format_bonus_icons(row, confirmed_semis)
+                bonus = _format_bonus_icons(row, confirmed_semis, zebra_statuses)
                 if bonus:
                     right += "\n" + bonus
                 lb_pairs.append((f"{medal}  <@{row['slack_user_id']}>", right))

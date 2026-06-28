@@ -560,6 +560,19 @@ def team_has_last32_fixture(conn: sqlite3.Connection, team_name: str) -> bool:
     return row[0] > 0
 
 
+def team_knocked_out(conn: sqlite3.Connection, team_name: str) -> bool:
+    """True if team has a finished knockout match where they didn't win (i.e. eliminated)."""
+    row = conn.execute(
+        """SELECT COUNT(*) FROM matches
+           WHERE (home_team = ? OR away_team = ?)
+             AND stage != 'GROUP_STAGE'
+             AND status = 'FINISHED'
+             AND winner != ?""",
+        (team_name, team_name, team_name),
+    ).fetchone()
+    return row[0] > 0
+
+
 def semi_picks_already_scored(conn: sqlite3.Connection) -> bool:
     row = conn.execute(
         "SELECT COUNT(*) FROM tournament_picks WHERE semi_points IS NOT NULL"
