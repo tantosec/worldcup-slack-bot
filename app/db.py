@@ -151,9 +151,39 @@ def get_enrolled_users(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 # ── Match queries ──────────────────────────────────────────────────────────────
 
 def upsert_match_espn(conn: sqlite3.Connection, m: dict):
-    """Upsert a match from ESPN. Matches by (home_team, away_team, kickoff_date) first,
-    falling back to external_id insert for new knockout matches with TBD teams resolved."""
+    """Upsert a match from ESPN.
+
+    Priority order:
+    1. Match by external_id — updates ALL fields including team names so ESPN
+       placeholder names (e.g. 'Group J 2nd Place') get replaced with real ones.
+    2. Match by (home_team, away_team, kickoff_date) — sets external_id on rows
+       that were inserted before ESPN assigned an id.
+    3. Insert as new row.
+    """
     kickoff_date = m["kickoff_utc"][:10]
+
+    # Step 1: update by external_id — covers team name changes
+    rows = conn.execute("""
+        UPDATE matches SET
+            home_team      = :home_team,
+            away_team      = :away_team,
+            kickoff_utc    = :kickoff_utc,
+            stage          = :stage,
+            status         = :status,
+            home_score     = :home_score,
+            away_score     = :away_score,
+            winner         = :winner,
+            duration       = :duration,
+            matchday       = COALESCE(:matchday, matchday),
+            venue_name     = COALESCE(:venue_name, venue_name),
+            venue_city     = COALESCE(:venue_city, venue_city)
+        WHERE external_id = :external_id
+    """, m)
+
+    if rows.rowcount > 0:
+        return
+
+    # Step 2: update by team names — sets external_id on pre-existing rows
     rows = conn.execute("""
         UPDATE matches SET
             external_id    = :external_id,
@@ -169,20 +199,23 @@ def upsert_match_espn(conn: sqlite3.Connection, m: dict):
           AND substr(kickoff_utc, 1, 10) = :kickoff_date
     """, {**m, "kickoff_date": kickoff_date})
 
-    if rows.rowcount == 0:
-        conn.execute("""
-            INSERT OR IGNORE INTO matches (
-                external_id, home_team, away_team, kickoff_utc, stage, matchday,
-                status, home_score, away_score, winner, duration,
-                et_home, et_away, penalties_home, penalties_away,
-                venue_name, venue_city
-            ) VALUES (
-                :external_id, :home_team, :away_team, :kickoff_utc, :stage, :matchday,
-                :status, :home_score, :away_score, :winner, :duration,
-                :et_home, :et_away, :penalties_home, :penalties_away,
-                :venue_name, :venue_city
-            )
-        """, m)
+    if rows.rowcount > 0:
+        return
+
+    # Step 3: truly new match
+    conn.execute("""
+        INSERT OR IGNORE INTO matches (
+            external_id, home_team, away_team, kickoff_utc, stage, matchday,
+            status, home_score, away_score, winner, duration,
+            et_home, et_away, penalties_home, penalties_away,
+            venue_name, venue_city
+        ) VALUES (
+            :external_id, :home_team, :away_team, :kickoff_utc, :stage, :matchday,
+            :status, :home_score, :away_score, :winner, :duration,
+            :et_home, :et_away, :penalties_home, :penalties_away,
+            :venue_name, :venue_city
+        )
+    """, m)
 
 
 def upsert_match(conn: sqlite3.Connection, m: dict):
