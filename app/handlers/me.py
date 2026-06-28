@@ -181,8 +181,10 @@ def handle_me(respond, body, client):
         hidden = len(upcoming_preds) - len(shown)
         blocks += [_divider(), _section("⏰  *Upcoming*")]
         for p in shown:
+            venue_parts = [x for x in [p["venue_name"], p["venue_city"]] if x]
+            venue_str = ("  ·  " + ", ".join(venue_parts)) if venue_parts else ""
             blocks.append(_section(
-                f"*{vs(p['home_team'], p['away_team'])}*  ·  {format_kickoff(p['kickoff_utc'])}\n"
+                f"*{vs(p['home_team'], p['away_team'])}*  ·  {format_kickoff(p['kickoff_utc'])}{venue_str}\n"
                 f":pencil: Your pick: *{p['pred_home']} - {p['pred_away']}*"
             ))
             # Combine odds + underdog into one context block to save blocks

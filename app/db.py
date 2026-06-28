@@ -927,6 +927,7 @@ def get_user_upcoming_predictions(conn: sqlite3.Connection, slack_user_id: str) 
     return conn.execute("""
         SELECT m.home_team, m.away_team, m.kickoff_utc, m.stage,
                m.home_odds, m.draw_odds, m.away_odds,
+               m.venue_name, m.venue_city,
                p.home_score AS pred_home, p.away_score AS pred_away
         FROM matches m
         JOIN predictions p ON p.match_id = m.id AND p.slack_user_id = ?
