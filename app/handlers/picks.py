@@ -3,7 +3,7 @@ from app.flags import FLAGS, flag
 from app.football import is_kickoff_passed
 from app.scoring import (
     TOURNAMENT_PICK_POINTS, SEMI_PICK_POINTS,
-    GROUP_GOALS_NEAR_RANGE, GROUP_GOALS_WIN_POINTS, GROUP_GOALS_NEAR_POINTS,
+    GROUP_GOALS_WIN_POINTS, GROUP_GOALS_NEAR_POINTS,
     ZEBRA_POINTS, ZEBRA_WILDCARD_MULTIPLIER,
     ZEBRA_BOLD, ZEBRA_WILDCARD,
 )
@@ -31,8 +31,8 @@ _SCORING_RUNDOWN = (
     f"*:four: Semi-finalists* _(pick all 4 — {SEMI_PICK_POINTS} pts per correct team, {SEMI_PICK_POINTS * 4} pts max)_\n"
     "\n"
     f"*:goal_net: Group Stage Goals* _(guess total goals across all 72 group matches)_\n"
-    f"  Closest guess → *{GROUP_GOALS_WIN_POINTS} pts* · "
-    f"Within ±{GROUP_GOALS_NEAR_RANGE} → *{GROUP_GOALS_NEAR_POINTS} pts*\n"
+    f"  1st closest → *{GROUP_GOALS_WIN_POINTS} pts* · "
+    f"2nd closest → *{GROUP_GOALS_NEAR_POINTS} pts*\n"
     "\n"
     "*:zebra_face: Zebra Pick* _(pick an underdog — points if they go far!)_\n"
     f"  R32 → *{ZEBRA_POINTS['LAST_32']} pts* · "
@@ -206,7 +206,7 @@ def open_picks_modal(client, trigger_id: str, slack_user_id: str):
         "label": {"type": "plain_text", "text": ":goal_net: Group Stage Total Goals (optional)"},
         "hint": {
             "type": "plain_text",
-            "text": f"Guess the total goals across all 72 group matches. Closest wins {GROUP_GOALS_WIN_POINTS} pts, within ±{GROUP_GOALS_NEAR_RANGE} gets {GROUP_GOALS_NEAR_POINTS} pts.",
+            "text": f"Guess the total goals across all 72 group matches. 1st closest wins {GROUP_GOALS_WIN_POINTS} pts, 2nd closest wins {GROUP_GOALS_NEAR_POINTS} pts.",
         },
         "element": {
             "type": "plain_text_input",
