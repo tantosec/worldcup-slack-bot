@@ -6,16 +6,16 @@ MEDALS = {1: ":first_place_medal:", 2: ":second_place_medal:", 3: ":third_place_
 def _bonus_icons(row) -> str:
     parts = []
     if row["winner_points"]:
-        parts.append(f":first_place_medal:+{row['winner_points']}")
+        parts.append(f":first_place_medal: _(+{row['winner_points']})_")
     if row["scorer_points"]:
-        parts.append(f":athletic_shoe:+{row['scorer_points']}")
+        parts.append(f":athletic_shoe: _(+{row['scorer_points']})_")
     if row["zebra_points"]:
-        parts.append(f":zebra_face:+{row['zebra_points']}")
+        parts.append(f":zebra_face: _(+{row['zebra_points']})_")
     if row["semi_points"]:
-        parts.append(f":four:+{row['semi_points']}")
+        parts.append(f":four: _(+{row['semi_points']})_")
     if row["group_goals_points"]:
-        parts.append(f":goal_net:+{row['group_goals_points']}")
-    return "  ".join(parts)
+        parts.append(f":goal_net: _(+{row['group_goals_points']})_")
+    return "  ·  ".join(parts)
 
 
 def handle_leaderboard(respond, client, body):

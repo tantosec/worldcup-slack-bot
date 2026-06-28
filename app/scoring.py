@@ -16,8 +16,7 @@ TOURNAMENT_PICK_POINTS = 30
 SEMI_PICK_POINTS = 15          # per correct semi-finalist (4 picks × 15 = 60 max)
 
 GROUP_GOALS_WIN_POINTS = 25    # closest guess
-GROUP_GOALS_NEAR_POINTS = 10   # within ±5 of actual
-GROUP_GOALS_NEAR_RANGE = 5
+GROUP_GOALS_NEAR_POINTS = 10   # second closest guess
 
 # Points for zebra pick based on how far they go
 ZEBRA_POINTS: dict[str, int] = {
@@ -48,12 +47,12 @@ def score_semi_picks(user_picks: set[str], actual_semis: set[str]) -> int:
 
 
 def score_group_goals(guess: int, actual: int, all_guesses: list[int]) -> int:
-    """Return points for one guess. all_guesses used to determine closest."""
+    """Return points for one guess. 1st closest = 25pts, 2nd closest = 10pts, rest = 0."""
     diff = abs(guess - actual)
-    min_diff = min(abs(g - actual) for g in all_guesses)
-    if diff == min_diff:
+    ranked = sorted(set(abs(g - actual) for g in all_guesses))
+    if diff == ranked[0]:
         return GROUP_GOALS_WIN_POINTS
-    if diff <= GROUP_GOALS_NEAR_RANGE:
+    if len(ranked) > 1 and diff == ranked[1]:
         return GROUP_GOALS_NEAR_POINTS
     return 0
 

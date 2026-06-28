@@ -239,18 +239,18 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None) -
             exact = row["exact_scores"] or 0
             bonus_parts = []
             if row["winner_points"]:
-                bonus_parts.append(f":first_place_medal:+{row['winner_points']}")
+                bonus_parts.append(f":first_place_medal: _(+{row['winner_points']})_")
             if row["scorer_points"]:
-                bonus_parts.append(f":athletic_shoe:+{row['scorer_points']}")
+                bonus_parts.append(f":athletic_shoe: _(+{row['scorer_points']})_")
             if row["zebra_points"]:
-                bonus_parts.append(f":zebra_face:+{row['zebra_points']}")
+                bonus_parts.append(f":zebra_face: _(+{row['zebra_points']})_")
             if row["semi_points"]:
-                bonus_parts.append(f":four:+{row['semi_points']}")
+                bonus_parts.append(f":four: _(+{row['semi_points']})_")
             if row["group_goals_points"]:
-                bonus_parts.append(f":goal_net:+{row['group_goals_points']}")
+                bonus_parts.append(f":goal_net: _(+{row['group_goals_points']})_")
             right = f"*{row['total_points']} pts*  ·  :dart: {exact}"
             if bonus_parts:
-                right += "\n" + "  ".join(bonus_parts)
+                right += "\n" + "  ·  ".join(bonus_parts)
             lb_pairs.append((f"{medal}  <@{row['slack_user_id']}>", right))
         blocks.extend(_block_fields(lb_pairs))
 
@@ -1250,15 +1250,15 @@ def send_phase_wrap(slack_client):
                 exact = row["exact_scores"] or 0
                 parts = []
                 if row["winner_points"]:
-                    parts.append(f":first_place_medal: Winner: +{row['winner_points']}")
+                    parts.append(f":first_place_medal: Winner: _(+{row['winner_points']})_")
                 if row["scorer_points"]:
-                    parts.append(f":athletic_shoe: Golden Boot: +{row['scorer_points']}")
+                    parts.append(f":athletic_shoe: Golden Boot: _(+{row['scorer_points']})_")
                 if row["zebra_points"]:
-                    parts.append(f":zebra_face: Zebra: +{row['zebra_points']}")
+                    parts.append(f":zebra_face: Zebra: _(+{row['zebra_points']})_")
                 if row["semi_points"]:
-                    parts.append(f":four: Semis: +{row['semi_points']}")
+                    parts.append(f":four: Semis: _(+{row['semi_points']})_")
                 if row["group_goals_points"]:
-                    parts.append(f":goal_net: Group goals: +{row['group_goals_points']}")
+                    parts.append(f":goal_net: Group goals: _(+{row['group_goals_points']})_")
                 breakdown = "  ·  ".join(parts) if parts else "no bonus points"
                 blocks.append(_block_section(
                     f"{medal}  <@{row['slack_user_id']}>  *{row['total_points']} pts*  ·  :dart: {exact} exact\n"
@@ -1284,20 +1284,19 @@ def send_phase_wrap(slack_client):
                 exact = row["exact_scores"] or 0
                 bonus_parts = []
                 if row["winner_points"]:
-                    bonus_parts.append(f":first_place_medal:+{row['winner_points']}")
+                    bonus_parts.append(f":first_place_medal: _(+{row['winner_points']})_")
                 if row["scorer_points"]:
-                    bonus_parts.append(f":athletic_shoe:+{row['scorer_points']}")
+                    bonus_parts.append(f":athletic_shoe: _(+{row['scorer_points']})_")
                 if row["zebra_points"]:
-                    bonus_parts.append(f":zebra_face:+{row['zebra_points']}")
+                    bonus_parts.append(f":zebra_face: _(+{row['zebra_points']})_")
                 if row["semi_points"]:
-                    bonus_parts.append(f":four:+{row['semi_points']}")
+                    bonus_parts.append(f":four: _(+{row['semi_points']})_")
                 if row["group_goals_points"]:
-                    bonus_parts.append(f":goal_net:+{row['group_goals_points']}")
-                bonus = "  " + "  ".join(bonus_parts) if bonus_parts else ""
-                lb_pairs.append((
-                    f"{medal}  <@{row['slack_user_id']}>",
-                    f"*{row['total_points']} pts*  ·  :dart: {exact}{bonus}",
-                ))
+                    bonus_parts.append(f":goal_net: _(+{row['group_goals_points']})_")
+                right = f"*{row['total_points']} pts*  ·  :dart: {exact}"
+                if bonus_parts:
+                    right += "\n" + "  ·  ".join(bonus_parts)
+                lb_pairs.append((f"{medal}  <@{row['slack_user_id']}>", right))
             blocks.extend(_block_fields(lb_pairs))
 
         # ─── FINAL champion message ───
@@ -1493,11 +1492,19 @@ def _advance_note(match, stage: str = "") -> str:
     else:
         return ""
 
+    duration = match["duration"] or "REGULAR"
+    if duration == "PENALTY_SHOOTOUT":
+        how = " _(by pens)_"
+    elif duration == "EXTRA_TIME":
+        how = " _(aet)_"
+    else:
+        how = ""
+
     if stage == "FINAL":
         return ""
     if stage == "THIRD_PLACE":
-        return f"  →  {flag(team_name)} *{team_name}* wins 3rd place :third_place_medal:"
-    return f"  →  {flag(team_name)} *{team_name}* advances"
+        return f"  →  {flag(team_name)} *{team_name}* wins 3rd place :third_place_medal:{how}"
+    return f"  →  {flag(team_name)} *{team_name}* advances{how}"
 
 
 def _stage_multiplier_label(stage: str) -> str:
