@@ -55,6 +55,7 @@ def handle_me(respond, body, client):
         picks_revealed = db.picks_reveal_already_sent(conn)
         finished_preds = db.get_user_finished_predictions(conn, target_id)
         upcoming_preds = [] if viewing_other else db.get_user_upcoming_predictions(conn, target_id)
+        missed, still_to_predict = (0, 0) if viewing_other else db.get_user_prediction_gaps(conn, target_id)
 
     if viewing_other:
         try:
@@ -116,6 +117,11 @@ def handle_me(respond, body, client):
     count_str = f"{len(finished_preds)} played"
     if upcoming_preds:
         count_str += f"  ·  {len(upcoming_preds)} upcoming"
+    if not viewing_other:
+        if still_to_predict:
+            count_str += f"  ·  :pencil: {still_to_predict} to predict"
+        if missed:
+            count_str += f"  ·  :x: {missed} missed"
     blocks += [_divider(), _section(f"⚽  *Match Predictions* ({count_str})")]
 
     if finished_preds:

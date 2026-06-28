@@ -59,10 +59,8 @@ def handle_leaderboard(respond, client, body):
         medal = MEDALS.get(i, f"`{i}.`")
         exact = row["exact_scores"] or 0
         upsets = row["upsets_called"] or 0
-        scored = row["scored_predictions"] or 0
-        total = row["total_predictions"] or 0
         bonus = _bonus_icons(row, confirmed_semis, zebra_statuses)
-        right = f"*{row['total_points']} pts*  ·  :dart: {exact}  ·  :zap: {upsets}  ·  {scored}/{total}"
+        right = f"*{row['total_points']} pts*  ·  :dart: {exact}  ·  :zap: {upsets}"
         if bonus:
             right += f"\n{bonus}"
         pairs.append((f"{medal}  <@{row['slack_user_id']}>", right))

@@ -935,6 +935,24 @@ def get_user_upcoming_predictions(conn: sqlite3.Connection, slack_user_id: str) 
     """, (slack_user_id,)).fetchall()
 
 
+def get_user_prediction_gaps(conn: sqlite3.Connection, slack_user_id: str) -> tuple[int, int]:
+    """Return (missed, still_to_predict) for a user.
+
+    missed = finished matches with no prediction submitted.
+    still_to_predict = upcoming scheduled matches with no prediction submitted.
+    """
+    row = conn.execute("""
+        SELECT
+            SUM(CASE WHEN m.status = 'FINISHED'
+                      AND p.id IS NULL THEN 1 ELSE 0 END) AS missed,
+            SUM(CASE WHEN m.status IN ('SCHEDULED', 'TIMED')
+                      AND p.id IS NULL THEN 1 ELSE 0 END) AS still_to_predict
+        FROM matches m
+        LEFT JOIN predictions p ON p.match_id = m.id AND p.slack_user_id = ?
+    """, (slack_user_id,)).fetchone()
+    return (row["missed"] or 0, row["still_to_predict"] or 0)
+
+
 def get_last32_fixture_count(conn: sqlite3.Connection) -> int:
     """Count confirmed LAST_32 fixtures in DB (0–16). Used to distinguish 'pending' from 'eliminated'."""
     return conn.execute(

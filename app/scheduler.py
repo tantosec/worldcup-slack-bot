@@ -269,9 +269,7 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None, c
         for i, row in enumerate(leaderboard[:10], start=1):
             medal = medals.get(i, f"`{i}.`")
             exact = row["exact_scores"] or 0
-            scored = row["scored_predictions"] or 0
-            total = row["total_predictions"] or 0
-            right = f"*{row['total_points']} pts*  ·  :dart: {exact}  ·  {scored}/{total}"
+            right = f"*{row['total_points']} pts*  ·  :dart: {exact}"
             bonus = _format_bonus_icons(row, confirmed_semis or set(), zebra_statuses)
             if bonus:
                 right += "\n" + bonus
