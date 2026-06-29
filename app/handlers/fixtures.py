@@ -51,11 +51,11 @@ def _upcoming_blocks(matches: list, user_preds: dict) -> list:
     blocks = []
     for m in matches:
         pred = user_preds.get(m["id"])
-        pick_line = (
-            f":pencil: Your pick: *{pred['home_score']} - {pred['away_score']}*"
-            if pred
-            else ":crystal_ball: _No prediction yet — use `/predict`_"
-        )
+        if pred:
+            pick_icon = ":robot_face:" if pred["is_auto"] else ":pencil:"
+            pick_line = f"{pick_icon} Your pick: *{pred['home_score']} - {pred['away_score']}*"
+        else:
+            pick_line = ":crystal_ball: _No prediction yet — use `/predict`_"
         venue = _venue_line(m)
         venue_suffix = f"  ·  {venue}" if venue else ""
         blocks.append(_section(
@@ -139,7 +139,7 @@ def _build_fixtures_blocks(slack_user_id: str) -> list | None:
                 fields = []
                 for uid, h, a, is_auto in predicted:
                     fields.append({"type": "mrkdwn", "text": f"<@{uid}>"})
-                    score_label = f":robot_face: `{h} - {a}`" if is_auto else f"`{h} - {a}`"
+                    score_label = f"`{h} - {a}` :robot_face:" if is_auto else f"`{h} - {a}`"
                     fields.append({"type": "mrkdwn", "text": score_label})
                 blocks.append({"type": "section", "fields": fields[:10]})
             if no_pick:

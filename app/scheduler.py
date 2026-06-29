@@ -267,9 +267,9 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None, c
             else:
                 icon = ":x:"
                 label = "Wrong"
-            auto_tag = " :robot_face:" if is_auto else ""
+            auto_tag = ":robot_face: " if is_auto else ""
             pred_pairs.append((
-                f"{icon}  <@{user_id}>{auto_tag}  `{pred_str}`  {label}",
+                f"{icon}  <@{user_id}>  `{pred_str}`  {auto_tag}{label}",
                 f"*{points_label(pts)}*",
             ))
         blocks.extend(_block_fields(pred_pairs))
@@ -479,7 +479,7 @@ def send_goal_notifications(slack_client):
                 blocks.append(_block_section("🔮  *Scoring right now*"))
                 scorer_pairs = [
                     (
-                        f"{icon}  <@{uid}>{'  :robot_face:' if is_auto else ''}  `{ph} - {pa}`",
+                        f"{icon}  <@{uid}>  `{ph} - {pa}`{'  :robot_face:' if is_auto else ''}",
                         f"*+{points_label(pts)}*",
                     )
                     for icon, uid, ph, pa, pts, is_auto in sorted(scorers, key=lambda x: -x[4])
@@ -588,7 +588,7 @@ def send_halftime_notifications(slack_client):
             blocks.append(_block_section("🔮  *Scoring at half time*"))
             scorer_pairs = [
                 (
-                    f"{icon}  <@{uid}>{'  :robot_face:' if is_auto else ''}  `{ph} - {pa}`",
+                    f"{icon}  <@{uid}>  `{ph} - {pa}`{'  :robot_face:' if is_auto else ''}",
                     f"*+{points_label(pts)}*",
                 )
                 for icon, uid, ph, pa, pts, is_auto in sorted(scorers, key=lambda x: -x[4])
@@ -825,7 +825,7 @@ def send_kickoff_announcements(slack_client):
         pred_pairs = [
             (
                 f"<@{p['slack_user_id']}>",
-                f":robot_face: `{p['home_score']} - {p['away_score']}`"
+                f"`{p['home_score']} - {p['away_score']}` :robot_face:"
                 if p["is_auto"] else
                 f"`{p['home_score']} - {p['away_score']}`"
             )
