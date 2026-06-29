@@ -7,6 +7,7 @@ from app.football import stage_label
 from app.llm import get_provider
 from app.llm.fallback import FallbackProvider
 from app.scoring import ZEBRA_BOLD, ZEBRA_WILDCARD
+from app.odds import odds_to_probs
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +26,12 @@ def _load_goal_threat_players() -> list[str]:
 
 def generate_auto_match_pick(match) -> tuple[int, int, str | None, str]:
     """Call LLM (or fallback) for a match. Returns (home, away, reasoning, provider)."""
-    home_prob = match["home_odds"] or 0.33
-    draw_prob = match["draw_odds"] or 0.33
-    away_prob = match["away_odds"] or 0.34
+    if match["home_odds"] and match["draw_odds"] and match["away_odds"]:
+        home_prob, draw_prob, away_prob = (
+            p / 100 for p in odds_to_probs(match["home_odds"], match["draw_odds"], match["away_odds"])
+        )
+    else:
+        home_prob, draw_prob, away_prob = 0.33, 0.33, 0.34
 
     try:
         provider = get_provider()
