@@ -135,7 +135,7 @@ def score_finished_matches(slack_client=None):
                 if pred["is_auto"]:
                     pts = int(pts * multiplier)
                 db.update_prediction_points(conn, pred["id"], pts)
-                results.append((pred["slack_user_id"], pred["home_score"], pred["away_score"], pts))
+                results.append((pred["slack_user_id"], pred["home_score"], pred["away_score"], pts, bool(pred["is_auto"])))
 
         with db.db() as conn:
             leaderboard = db.get_leaderboard(conn)
@@ -150,7 +150,7 @@ def score_finished_matches(slack_client=None):
             except Exception as exc:
                 logger.error("Failed to post result summary for match %s, will retry: %s", match["id"], exc)
                 continue
-            for user_id, pred_home, pred_away, pts in results:
+            for user_id, pred_home, pred_away, pts, _is_auto in results:
                 _dm_points_earned(slack_client, user_id, match, pred_home, pred_away, pts)
 
         with db.db() as conn:
@@ -256,7 +256,7 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None, c
         pred_pairs = []
         act_h = match.get("_act_home", match["home_score"])
         act_a = match.get("_act_away", match["away_score"])
-        for user_id, pred_home, pred_away, pts in results_sorted:
+        for user_id, pred_home, pred_away, pts, is_auto in results_sorted:
             pred_str = f"{pred_home} - {pred_away}"
             if pts > 0 and pred_home == act_h and pred_away == act_a:
                 icon = ":dart:"
@@ -267,8 +267,9 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None, c
             else:
                 icon = ":x:"
                 label = "Wrong"
+            auto_tag = " :robot_face:" if is_auto else ""
             pred_pairs.append((
-                f"{icon}  <@{user_id}>  `{pred_str}`  {label}",
+                f"{icon}  <@{user_id}>{auto_tag}  `{pred_str}`  {label}",
                 f"*{points_label(pts)}*",
             ))
         blocks.extend(_block_fields(pred_pairs))

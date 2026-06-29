@@ -129,14 +129,18 @@ def _build_fixtures_blocks(slack_user_id: str) -> list | None:
                 blocks.append(_context(part))
 
             preds = live_preds.get(m["id"], [])
-            predicted = [(r["slack_user_id"], r["home_score"], r["away_score"]) for r in preds if r["home_score"] is not None]
+            predicted = [
+                (r["slack_user_id"], r["home_score"], r["away_score"], r["is_auto"])
+                for r in preds if r["home_score"] is not None
+            ]
             no_pick = [r["slack_user_id"] for r in preds if r["home_score"] is None]
 
             if predicted:
                 fields = []
-                for uid, h, a in predicted:
+                for uid, h, a, is_auto in predicted:
                     fields.append({"type": "mrkdwn", "text": f"<@{uid}>"})
-                    fields.append({"type": "mrkdwn", "text": f"`{h} - {a}`"})
+                    score_label = f":robot_face: `{h} - {a}`" if is_auto else f"`{h} - {a}`"
+                    fields.append({"type": "mrkdwn", "text": score_label})
                 blocks.append({"type": "section", "fields": fields[:10]})
             if no_pick:
                 blocks.append(_context(":ghost:  No pick: " + "  ".join(f"<@{uid}>" for uid in no_pick)))
