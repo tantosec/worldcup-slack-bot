@@ -69,8 +69,14 @@ def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]
         if picks["scorer_points"] is not None:
             bonus_fields.append({"type": "mrkdwn", "text": f":athletic_shoe: *Golden Boot*\n{picks['scorer_points']} pts"})
         if picks["zebra_points"] is not None:
-            z_status = "  :fire:" if zebra_knocked_out is False else ("  :skull:" if zebra_knocked_out else "")
-            bonus_fields.append({"type": "mrkdwn", "text": f":zebra_face: *Zebra*\n{picks['zebra_points']} pts{z_status}"})
+            z_pts_val = picks["zebra_points"]
+            if z_pts_val == 0 or zebra_knocked_out is True:
+                z_status = "  :skull:"
+            elif z_pts_val > 0 and zebra_knocked_out is False:
+                z_status = "  :fire:"
+            else:
+                z_status = ""
+            bonus_fields.append({"type": "mrkdwn", "text": f":zebra_face: *Zebra*\n{z_pts_val} pts{z_status}"})
         if picks["semi_points"] is not None:
             bonus_fields.append({"type": "mrkdwn", "text": f":four: *Semis*\n{picks['semi_points']} pts"})
         if picks["group_goals_points"] is not None:
@@ -327,9 +333,9 @@ def _picks_text(picks, locked: bool, zebra_knocked_out: bool | None = None) -> s
     if zebra:
         tier_label = ":black_joker: Wildcard" if picks["zebra_tier"] == "WILDCARD" else "⭐ Bold"
         z_pts = picks["zebra_points"]
-        if zebra_knocked_out is True:
+        if (z_pts is not None and z_pts == 0) or zebra_knocked_out is True:
             status = "  :skull: *Eliminated!*"
-        elif zebra_knocked_out is False:
+        elif z_pts is not None and z_pts > 0 and zebra_knocked_out is False:
             status = "  :fire: *Still Alive!*"
         else:
             status = ""
