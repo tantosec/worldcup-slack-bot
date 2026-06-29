@@ -185,6 +185,7 @@ def handle_fixtures(respond, body):
 
 
 def handle_fixtures_page(ack, respond, body):
+    import logging; logging.getLogger(__name__).info("fixtures_page action: page=%s user=%s", body["actions"][0]["value"], body["user"]["id"])
     ack()
     slack_user_id = body["user"]["id"]
     page = int(body["actions"][0]["value"])
