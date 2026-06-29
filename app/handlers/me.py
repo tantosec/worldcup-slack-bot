@@ -241,7 +241,7 @@ def handle_mystats_upcoming_page(ack, respond, body, client):
     blocks, title = _build_me_blocks(target_id, caller_id, client, upcoming_page=page)
     try:
         result = respond(replace_original=True, blocks=blocks, text=title)
-        logger.info("respond result: %s", result)
+        logger.info("respond status=%s body=%r", result.status_code, result.body)
     except Exception as exc:
         logger.exception("respond failed: %s", exc)
 
