@@ -43,7 +43,7 @@ def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]
         finished_preds = db.get_user_finished_predictions(conn, target_id)
         upcoming_preds = [] if viewing_other else db.get_user_upcoming_predictions(conn, target_id)
         missed, still_to_predict = (0, 0) if viewing_other else db.get_user_prediction_gaps(conn, target_id)
-        zebra_knocked_out = db.team_knocked_out(conn, picks["zebra"]) if picks and picks.get("zebra") else None
+        zebra_knocked_out = db.team_knocked_out(conn, picks["zebra"]) if picks and picks["zebra"] else None
 
     if viewing_other:
         try:

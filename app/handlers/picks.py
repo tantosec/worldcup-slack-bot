@@ -77,7 +77,7 @@ def open_picks_modal(client, trigger_id: str, slack_user_id: str, response_url: 
     if locked and existing:
         with db.db() as conn:
             all_picks = db.get_all_picks_for_reveal(conn)
-            own_zebra_knocked_out = db.team_knocked_out(conn, existing["zebra"]) if existing.get("zebra") else None
+            own_zebra_knocked_out = db.team_knocked_out(conn, existing["zebra"]) if existing["zebra"] else None
 
         # DM: just the user's own picks
         from app.handlers.me import _picks_text
@@ -351,7 +351,7 @@ def _build_picks_preview_blocks(all_picks: list, caller_id: str) -> list:
     from app.handlers.me import _picks_text
     others = [p for p in all_picks if p["slack_user_id"] != caller_id]
 
-    zebra_teams = {p["zebra"] for p in others[:_EPHEMERAL_PREVIEW] if p.get("zebra")}
+    zebra_teams = {p["zebra"] for p in others[:_EPHEMERAL_PREVIEW] if p["zebra"]}
     zebra_statuses = {}
     if zebra_teams:
         with db.db() as conn:
@@ -363,7 +363,7 @@ def _build_picks_preview_blocks(all_picks: list, caller_id: str) -> list:
         {"type": "context", "elements": [{"type": "mrkdwn", "text": "_Picks are locked. Points update as the tournament progresses._"}]},
     ]
     for p in others[:_EPHEMERAL_PREVIEW]:
-        z_status = zebra_statuses.get(p["zebra"]) if p.get("zebra") else None
+        z_status = zebra_statuses.get(p["zebra"]) if p["zebra"] else None
         blocks.append({"type": "divider"})
         blocks.append({
             "type": "section",
@@ -389,7 +389,7 @@ def _build_picks_modal_view(all_picks: list, caller_id: str, page: int = 0) -> d
     start = page * PICKS_MODAL_PAGE_SIZE
     page_picks = others[start:start + PICKS_MODAL_PAGE_SIZE]
 
-    zebra_teams = {p["zebra"] for p in page_picks if p.get("zebra")}
+    zebra_teams = {p["zebra"] for p in page_picks if p["zebra"]}
     zebra_statuses = {}
     if zebra_teams:
         with db.db() as conn:
@@ -398,7 +398,7 @@ def _build_picks_modal_view(all_picks: list, caller_id: str, page: int = 0) -> d
 
     blocks = []
     for p in page_picks:
-        z_status = zebra_statuses.get(p["zebra"]) if p.get("zebra") else None
+        z_status = zebra_statuses.get(p["zebra"]) if p["zebra"] else None
         blocks.append({"type": "divider"})
         blocks.append({
             "type": "section",
