@@ -134,7 +134,7 @@ def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]
                 pts = p["points"] or 0
                 pred_str = f"{p['pred_home']} - {p['pred_away']}"
 
-                if p.get("is_auto"):
+                if p["is_auto"]:
                     icon = ":robot_face:"
                 elif p["pred_home"] == p["act_home"] and p["pred_away"] == p["act_away"]:
                     icon = ":dart:"
