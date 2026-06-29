@@ -29,10 +29,9 @@ def generate_auto_match_pick(match) -> tuple[int, int, str | None, str]:
     draw_prob = match["draw_odds"] or 0.33
     away_prob = match["away_odds"] or 0.34
 
-    provider = get_provider()
-    provider_name = type(provider).__name__.replace("Provider", "").lower()
-
     try:
+        provider = get_provider()
+        provider_name = type(provider).__name__.replace("Provider", "").lower()
         result = provider.predict_match(
             match["home_team"], match["away_team"],
             match["stage"], home_prob, draw_prob, away_prob,
@@ -41,9 +40,9 @@ def generate_auto_match_pick(match) -> tuple[int, int, str | None, str]:
             "Auto match pick generated via %s: %s %d-%d %s",
             provider_name, match["home_team"], result["home"], result["away"], match["away_team"],
         )
-        return result["home"], result["away"], result.get("reasoning"), provider_name
+        return result["home"], result["away"], result["reasoning"], provider_name
     except Exception as exc:
-        logger.warning("LLM provider %s failed: %s — using fallback", provider_name, exc)
+        logger.warning("LLM provider failed: %s — using fallback", exc)
         fallback = FallbackProvider()
         result = fallback.predict_match(
             match["home_team"], match["away_team"],
@@ -55,15 +54,14 @@ def generate_auto_match_pick(match) -> tuple[int, int, str | None, str]:
 def generate_auto_tournament_picks() -> tuple[dict, str]:
     """Call LLM (or fallback) for tournament picks. Returns (picks_dict, provider_name)."""
     players = _load_goal_threat_players()
-    provider = get_provider()
-    provider_name = type(provider).__name__.replace("Provider", "").lower()
-
     try:
+        provider = get_provider()
+        provider_name = type(provider).__name__.replace("Provider", "").lower()
         result = provider.predict_tournament_picks(ZEBRA_BOLD, ZEBRA_WILDCARD, players)
         logger.info("Auto tournament picks generated via %s: winner=%s", provider_name, result["winner"])
         return result, provider_name
     except Exception as exc:
-        logger.warning("LLM provider %s failed: %s — using fallback", provider_name, exc)
+        logger.warning("LLM provider failed: %s — using fallback", exc)
         fallback = FallbackProvider()
         result = fallback.predict_tournament_picks(ZEBRA_BOLD, ZEBRA_WILDCARD, players)
         return result, "fallback"
