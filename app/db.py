@@ -676,6 +676,9 @@ def get_picks_lock_time(conn: sqlite3.Connection) -> str | None:
     import os
     override = os.getenv("PICKS_LOCK_TIME")
     if override:
+        # Normalise to UTC ISO string so is_kickoff_passed always gets an aware datetime
+        if not override.endswith("Z") and "+" not in override[10:]:
+            override = override + "Z"
         return override
     return get_first_match_kickoff(conn)
 
