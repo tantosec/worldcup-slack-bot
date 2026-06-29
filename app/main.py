@@ -74,7 +74,7 @@ def cmd_enroll(ack, respond, body):
 @app.command("/picks")
 def cmd_picks(ack, body, client):
     ack()
-    open_picks_modal(client, body["trigger_id"], body["user_id"])
+    open_picks_modal(client, body["trigger_id"], body["user_id"], body.get("response_url", ""), body.get("channel_id", ""))
 
 
 @app.view(PICKS_CALLBACK_ID)
@@ -83,8 +83,8 @@ def view_picks(ack, body, client):
 
 
 @app.action(PICKS_PAGE_ACTION)
-def action_picks_page(ack, body, respond):
-    handle_picks_page_action(ack, body, respond)
+def action_picks_page(ack, body):
+    handle_picks_page_action(ack, body)
 
 
 # ── External select: golden boot player search ────────────────────────────────
@@ -134,8 +134,8 @@ def cmd_fixtures(ack, respond, body):
 
 
 @app.action(FIXTURES_PAGE_ACTION)
-def action_fixtures_page(ack, respond, body):
-    handle_fixtures_page(ack, respond, body)
+def action_fixtures_page(ack, body):
+    handle_fixtures_page(ack, body)
 
 
 # ── Slash command: /results ───────────────────────────────────────────────────
@@ -146,8 +146,8 @@ def cmd_results(ack, respond, body):
 
 
 @app.action(RESULTS_PAGE_ACTION)
-def action_results_page(ack, respond, body):
-    handle_results_page(ack, respond, body)
+def action_results_page(ack, body):
+    handle_results_page(ack, body)
 
 
 # ── Slash command: /scoring ───────────────────────────────────────────────────
@@ -165,8 +165,8 @@ def cmd_me(ack, respond, body, client):
 
 
 @app.action(MYSTATS_UPCOMING_PAGE_ACTION)
-def action_mystats_upcoming_page(ack, respond, body, client):
-    handle_mystats_upcoming_page(ack, respond, body, client)
+def action_mystats_upcoming_page(ack, body, client):
+    handle_mystats_upcoming_page(ack, body, client)
 
 
 # ── Slash command: /help ──────────────────────────────────────────────────────

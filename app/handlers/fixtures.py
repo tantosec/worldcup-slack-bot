@@ -69,7 +69,7 @@ def _upcoming_blocks(matches: list, user_preds: dict) -> list:
     return blocks
 
 
-def _build_fixtures_blocks(slack_user_id: str, page: int = 0) -> list | None:
+def _build_fixtures_blocks(slack_user_id: str, page: int = 0, response_url: str = "") -> list | None:
     with db.db() as conn:
         live_matches = db.get_live_matches(conn)
         upcoming = db.get_all_upcoming_matches(conn)
@@ -159,14 +159,14 @@ def _build_fixtures_blocks(slack_user_id: str, page: int = 0) -> list | None:
                 "type": "button",
                 "text": {"type": "plain_text", "text": "← Previous", "emoji": True},
                 "action_id": FIXTURES_PAGE_ACTION,
-                "value": str(page - 1),
+                "value": f"{page - 1}|{response_url}",
             })
         if page < total_pages - 1:
             nav_elements.append({
                 "type": "button",
                 "text": {"type": "plain_text", "text": "Next →", "emoji": True},
                 "action_id": FIXTURES_PAGE_ACTION,
-                "value": str(page + 1),
+                "value": f"{page + 1}|{response_url}",
             })
         if nav_elements:
             blocks.append({"type": "actions", "elements": nav_elements})
@@ -177,19 +177,25 @@ def _build_fixtures_blocks(slack_user_id: str, page: int = 0) -> list | None:
 
 def handle_fixtures(respond, body):
     slack_user_id = body["user_id"]
-    blocks = _build_fixtures_blocks(slack_user_id)
+    response_url = body.get("response_url", "")
+    blocks = _build_fixtures_blocks(slack_user_id, response_url=response_url)
     if blocks is None:
         respond(response_type="ephemeral", text="No fixtures found. The fixture list may not be loaded yet.")
         return
     respond(response_type="ephemeral", blocks=blocks, text="FIFA World Cup 2026 — Fixtures")
 
 
-def handle_fixtures_page(ack, respond, body):
+def handle_fixtures_page(ack, body):
     ack()
+    from slack_sdk.webhook import WebhookClient
     slack_user_id = body["user"]["id"]
-    page = int(body["actions"][0]["value"])
-    blocks = _build_fixtures_blocks(slack_user_id, page=page)
+    raw_value = body["actions"][0]["value"]
+    page_str, _, response_url = raw_value.partition("|")
+    page = int(page_str)
+    blocks = _build_fixtures_blocks(slack_user_id, page=page, response_url=response_url)
     if blocks is None:
-        respond(response_type="ephemeral", text="No fixtures found.")
+        if response_url:
+            WebhookClient(response_url).send(replace_original=True, text="No fixtures found.")
         return
-    respond(replace_original=True, blocks=blocks, text="FIFA World Cup 2026 — Fixtures")
+    if response_url:
+        WebhookClient(response_url).send(replace_original=True, blocks=blocks, text="FIFA World Cup 2026 — Fixtures")

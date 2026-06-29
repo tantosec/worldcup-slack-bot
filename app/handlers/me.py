@@ -25,7 +25,7 @@ def _divider() -> dict:
     return {"type": "divider"}
 
 
-def _build_me_blocks(target_id: str, caller_id: str, client, upcoming_page: int = 0) -> tuple[list, str]:
+def _build_me_blocks(target_id: str, caller_id: str, client, upcoming_page: int = 0, response_url: str = "") -> tuple[list, str]:
     """Build blocks for /mystats. Returns (blocks, title)."""
     viewing_other = target_id != caller_id
 
@@ -183,14 +183,14 @@ def _build_me_blocks(target_id: str, caller_id: str, client, upcoming_page: int 
                 "type": "button",
                 "text": {"type": "plain_text", "text": "← Previous", "emoji": True},
                 "action_id": MYSTATS_UPCOMING_PAGE_ACTION,
-                "value": f"{target_id}:{upcoming_page - 1}",
+                "value": f"{target_id}:{upcoming_page - 1}|{response_url}",
             })
         if upcoming_page < total_pages - 1:
             nav_elements.append({
                 "type": "button",
                 "text": {"type": "plain_text", "text": "Next →", "emoji": True},
                 "action_id": MYSTATS_UPCOMING_PAGE_ACTION,
-                "value": f"{target_id}:{upcoming_page + 1}",
+                "value": f"{target_id}:{upcoming_page + 1}|{response_url}",
             })
         if nav_elements:
             blocks.append({"type": "actions", "elements": nav_elements})
@@ -222,30 +222,25 @@ def handle_me(respond, body, client):
                 respond(response_type="ephemeral", text=":wave: You're not enrolled yet — use `/register` to join!")
             return
 
-    blocks, title = _build_me_blocks(target_id, caller_id, client, upcoming_page=0)
+    response_url = body.get("response_url", "")
+    blocks, title = _build_me_blocks(target_id, caller_id, client, upcoming_page=0, response_url=response_url)
     respond(response_type="ephemeral", blocks=blocks, text=title)
 
 
-def handle_mystats_upcoming_page(ack, respond, body, client):
+def handle_mystats_upcoming_page(ack, body, client):
     ack()
-    logger.info("mystats_upcoming_page called, value=%r, response_url=%r",
-                body["actions"][0]["value"], body.get("response_url", "MISSING"))
+    from slack_sdk.webhook import WebhookClient
     caller_id = body["user"]["id"]
     with db.db() as conn:
         if not db.is_enrolled(conn, caller_id):
-            respond(replace_original=True, text=":wave: You're not enrolled in the league anymore.")
             return
-    value = body["actions"][0]["value"]
-    target_id, page_str = value.rsplit(":", 1)
+    raw_value = body["actions"][0]["value"]
+    value_part, _, response_url = raw_value.partition("|")
+    target_id, page_str = value_part.rsplit(":", 1)
     page = int(page_str)
-    blocks, title = _build_me_blocks(target_id, caller_id, client, upcoming_page=page)
-    logger.info("block count=%d", len(blocks))
-    try:
-        # Test: plain text only, no blocks
-        result = respond(replace_original=True, text="[PAGINATION TEST] page updated ok")
-        logger.info("text-only respond status=%s body=%r", result.status_code, result.body)
-    except Exception as exc:
-        logger.exception("respond failed: %s", exc)
+    blocks, title = _build_me_blocks(target_id, caller_id, client, upcoming_page=page, response_url=response_url)
+    if response_url:
+        WebhookClient(response_url).send(replace_original=True, blocks=blocks, text=title)
 
 
 def _picks_text(picks, locked: bool) -> str:

@@ -69,7 +69,7 @@ def _match_blocks(m, pred) -> list:
     return blocks
 
 
-def _build_results_blocks(slack_user_id: str, page: int = 0) -> list | None:
+def _build_results_blocks(slack_user_id: str, page: int = 0, response_url: str = "") -> list | None:
     with db.db() as conn:
         matches = db.get_all_finished_matches(conn)
         if not matches:
@@ -97,14 +97,14 @@ def _build_results_blocks(slack_user_id: str, page: int = 0) -> list | None:
             "type": "button",
             "text": {"type": "plain_text", "text": "← Newer", "emoji": True},
             "action_id": RESULTS_PAGE_ACTION,
-            "value": str(page - 1),
+            "value": f"{page - 1}|{response_url}",
         })
     if page < total_pages - 1:
         nav_elements.append({
             "type": "button",
             "text": {"type": "plain_text", "text": "Older →", "emoji": True},
             "action_id": RESULTS_PAGE_ACTION,
-            "value": str(page + 1),
+            "value": f"{page + 1}|{response_url}",
         })
     if nav_elements:
         blocks.append({"type": "divider"})
@@ -116,19 +116,25 @@ def _build_results_blocks(slack_user_id: str, page: int = 0) -> list | None:
 
 def handle_results(respond, body):
     slack_user_id = body["user_id"]
-    blocks = _build_results_blocks(slack_user_id)
+    response_url = body.get("response_url", "")
+    blocks = _build_results_blocks(slack_user_id, response_url=response_url)
     if blocks is None:
         respond(response_type="ephemeral", text="No results yet — check back after the first match!")
         return
     respond(response_type="ephemeral", blocks=blocks, text="FIFA World Cup 2026 — Recent Results")
 
 
-def handle_results_page(ack, respond, body):
+def handle_results_page(ack, body):
     ack()
+    from slack_sdk.webhook import WebhookClient
     slack_user_id = body["user"]["id"]
-    page = int(body["actions"][0]["value"])
-    blocks = _build_results_blocks(slack_user_id, page=page)
+    raw_value = body["actions"][0]["value"]
+    page_str, _, response_url = raw_value.partition("|")
+    page = int(page_str)
+    blocks = _build_results_blocks(slack_user_id, page=page, response_url=response_url)
     if blocks is None:
-        respond(response_type="ephemeral", text="No results found.")
+        if response_url:
+            WebhookClient(response_url).send(replace_original=True, text="No results found.")
         return
-    respond(replace_original=True, blocks=blocks, text="FIFA World Cup 2026 — Recent Results")
+    if response_url:
+        WebhookClient(response_url).send(replace_original=True, blocks=blocks, text="FIFA World Cup 2026 — Recent Results")
