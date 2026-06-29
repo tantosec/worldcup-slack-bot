@@ -106,7 +106,7 @@ def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]
         if picks["is_auto"] if "is_auto" in picks.keys() else False:
             blocks.append(_context(":robot_face: _These picks were auto-generated — you missed the deadline._"))
     elif viewing_other and not picks_revealed:
-        blocks.append(_context("_Picks are revealed after Matchday 2 locks._"))
+        blocks.append(_context("_Picks are revealed after picks lock._"))
     else:
         blocks.append(_context("_(not submitted yet)_"))
 

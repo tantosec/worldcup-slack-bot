@@ -666,6 +666,24 @@ def get_first_matchday2_kickoff(conn: sqlite3.Connection) -> str | None:
     return row["kickoff_utc"] if row else None
 
 
+def normalize_picks_lock_time(value: str) -> str:
+    """Convert a PICKS_LOCK_TIME env value to a UTC ISO string.
+
+    If no timezone info is present, the value is interpreted as DISPLAY_TIMEZONE
+    (not UTC) so users can enter times naturally in their local timezone.
+    e.g. '2026-06-18 18:00' with DISPLAY_TIMEZONE=Australia/Sydney → 08:00Z
+    """
+    from datetime import datetime, timezone as dt_timezone
+    from zoneinfo import ZoneInfo
+    value = value.strip()
+    if value.endswith("Z") or (len(value) > 10 and "+" in value[10:]):
+        return value
+    tz_name = os.getenv("DISPLAY_TIMEZONE", "Australia/Sydney")
+    dt = datetime.fromisoformat(value)
+    dt = dt.replace(tzinfo=ZoneInfo(tz_name))
+    return dt.astimezone(dt_timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def get_picks_lock_time(conn: sqlite3.Connection) -> str | None:
     """Return the picks lock datetime (UTC ISO string).
 
@@ -673,14 +691,55 @@ def get_picks_lock_time(conn: sqlite3.Connection) -> str | None:
     1. PICKS_LOCK_TIME env var (explicit override — used when bot deployed mid-tournament)
     2. First match kickoff in DB (correct default for a properly deployed bot)
     """
-    import os
     override = os.getenv("PICKS_LOCK_TIME")
     if override:
-        # Normalise to UTC ISO string so is_kickoff_passed always gets an aware datetime
-        if not override.endswith("Z") and "+" not in override[10:]:
-            override = override + "Z"
-        return override
+        return normalize_picks_lock_time(override)
     return get_first_match_kickoff(conn)
+
+
+def _format_lock_dt(lock_time: str, short: bool = False) -> str:
+    """Format a UTC ISO lock time string into a human-readable local time."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    tz_name = os.getenv("DISPLAY_TIMEZONE", "Australia/Sydney")
+    dt = datetime.fromisoformat(lock_time.replace("Z", "+00:00"))
+    local = dt.astimezone(ZoneInfo(tz_name))
+    day = local.strftime("%-d %b %Y")
+    time_str = local.strftime("%-I:%M %p")
+    if short:
+        return f"{day} at {time_str}"
+    weekday = local.strftime("%A")
+    return f"{weekday}, {day} at {time_str}"
+
+
+def format_picks_lock_display(conn: sqlite3.Connection) -> str:
+    """Return a full human-readable picks lock time for use after 'on' in messages.
+
+    e.g. 'Thursday, 18 Jun 2026 at 4:00 PM'
+    or   'Thursday, 5 Jun 2026 at 6:00 PM (first match kickoff)'
+    """
+    lock_time = get_picks_lock_time(conn)
+    if not lock_time:
+        return "unknown"
+    formatted = _format_lock_dt(lock_time)
+    if not os.getenv("PICKS_LOCK_TIME"):
+        return f"{formatted} (first match kickoff)"
+    return formatted
+
+
+def format_picks_lock_short(conn: sqlite3.Connection) -> str:
+    """Return a compact picks lock time (no weekday) for use in command lists.
+
+    e.g. '18 Jun 2026 at 4:00 PM'
+    or   '5 Jun 2026 at 6:00 PM (first match kickoff)'
+    """
+    lock_time = get_picks_lock_time(conn)
+    if not lock_time:
+        return "unknown"
+    formatted = _format_lock_dt(lock_time, short=True)
+    if not os.getenv("PICKS_LOCK_TIME"):
+        return f"{formatted} (first match kickoff)"
+    return formatted
 
 
 # ── Kickoff announcement queries ──────────────────────────────────────────────

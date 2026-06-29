@@ -9,6 +9,29 @@ _MAX_WILDCARD_WINNER = ZEBRA_POINTS["WINNER"] * ZEBRA_WILDCARD_MULTIPLIER
 _ORG = os.getenv("ORG_NAME", "TantoSec")
 _AUTO_PICK_PCT = int(float(os.getenv("AUTO_PICK_POINTS_MULTIPLIER", "0.75")) * 100)
 
+
+def _lock_display_env() -> str:
+    """Format picks lock time for display using env vars only (no DB — used at module level).
+
+    Returns a phrase ready to follow 'locks':
+      'on Thursday, 18 Jun 2026 at 4:00 PM'  (when PICKS_LOCK_TIME is set)
+      'at the first match kickoff'             (when not set — no DB available here)
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from app.db import normalize_picks_lock_time
+    override = os.getenv("PICKS_LOCK_TIME", "").strip()
+    if not override:
+        return "at the first match kickoff"
+    utc_str = normalize_picks_lock_time(override)
+    tz_name = os.getenv("DISPLAY_TIMEZONE", "Australia/Sydney")
+    dt = datetime.fromisoformat(utc_str.replace("Z", "+00:00"))
+    local = dt.astimezone(ZoneInfo(tz_name))
+    return "on " + local.strftime("%A, %-d %b %Y at %-I:%M %p")
+
+
+_LOCK_DISPLAY = _lock_display_env()
+
 SCORING_BLOCKS = [
     {
         "type": "header",
@@ -56,7 +79,7 @@ SCORING_BLOCKS = [
         "text": {
             "type": "mrkdwn",
             "text": (
-                f"*Tournament Picks* _(lock before Matchday 2 on 18 Jun)_\n"
+                f"*Tournament Picks* _(locks {_LOCK_DISPLAY})_\n"
                 f":first_place_medal: World Cup Winner → *{TOURNAMENT_PICK_POINTS} pts*\n"
                 f":athletic_shoe: Golden Boot (top scorer) → *{TOURNAMENT_PICK_POINTS} pts*\n"
                 f":four: Semi-finalists → *{SEMI_PICK_POINTS} pts each* ({SEMI_PICK_POINTS * 4} pts max)"

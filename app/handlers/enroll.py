@@ -11,6 +11,7 @@ def handle_enroll(respond, body):
     with db.db() as conn:
         enrolled = db.enroll_user(conn, slack_user_id)
         first_kickoff = db.get_first_match_kickoff(conn)
+        lock_display = db.format_picks_lock_short(conn)
 
     tournament_started = first_kickoff is not None and is_kickoff_passed(first_kickoff)
 
@@ -54,7 +55,7 @@ def handle_enroll(respond, body):
             "\n"
             ":lock: Predictions are *locked once submitted* — choose wisely!\n"
             "\n"
-            "  `/picks`       — tournament picks: winner, golden boot & zebra *(locks 18 Jun)*\n"
+            f"  `/picks`       — tournament picks: winner, golden boot & zebra *(locks {lock_display})*\n"
             "  `/predict`     — predict match scores (pick a date, fill in scores)\n"
             "  `/fixtures`    — upcoming matches\n"
             "  `/results`     — recent results & your points\n"

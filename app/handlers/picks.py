@@ -65,12 +65,13 @@ def open_picks_modal(client, trigger_id: str, slack_user_id: str, response_url: 
 
         locked = _picks_locked(conn)
         existing = db.get_tournament_pick(conn, slack_user_id)
+        lock_display = db.format_picks_lock_display(conn)
 
     if locked and not existing:
         client.chat_postEphemeral(
             channel=slack_user_id,
             user=slack_user_id,
-            text=":lock: Tournament picks are locked — Matchday 2 has already begun.",
+            text=":lock: Tournament picks are locked.",
         )
         return
 
@@ -236,7 +237,7 @@ def open_picks_modal(client, trigger_id: str, slack_user_id: str, response_url: 
                     "text": {
                         "type": "mrkdwn",
                         "text": (
-                            ":lock: These lock when *Matchday 2 begins (18 Jun)* — "
+                            f":lock: These lock on *{lock_display}* — "
                             "you can update any time before then."
                         ),
                     },
@@ -299,13 +300,14 @@ def handle_picks_submit(ack, body, client):
     with db.db() as conn:
         if _picks_locked(conn):
             ack(response_action="errors", errors={
-                "block_winner": "Picks are locked — Matchday 2 has already begun."
+                "block_winner": "Picks are locked."
             })
             return
         db.upsert_tournament_pick(
             conn, slack_user_id, winner, top_scorer, zebra, zebra_tier,
             semis[0], semis[1], semis[2], semis[3], group_goals_guess,
         )
+        lock_display = db.format_picks_lock_display(conn)
 
     ack()
 
@@ -326,7 +328,7 @@ def handle_picks_submit(ack, body, client):
             f"  :trophy: Winner: *{flag(winner)} {winner}*\n"
             f"  :athletic_shoe: Golden Boot: *{top_scorer}*"
             f"{semi_line}{zebra_line}{goals_line}\n\n"
-            f"You can update these any time before Matchday 2 begins on *18 Jun*."
+            f"You can update these any time before picks lock on *{lock_display}*."
         ),
     )
 

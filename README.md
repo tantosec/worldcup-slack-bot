@@ -64,7 +64,7 @@ Players who forget to predict a match or miss the tournament picks deadline are 
 | Command | Description |
 |---------|-------------|
 | `/register` | Join the prediction league |
-| `/picks` | Set tournament picks (locks 18 Jun) |
+| `/picks` | Set tournament picks (locks at first match kickoff, or `PICKS_LOCK_TIME` if configured) |
 | `/predict` | Predict match scores — pick a date, fill in scores |
 | `/leaderboard` | Current standings |
 | `/fixtures` | Upcoming fixtures + live matches with all predictions during games |
@@ -125,7 +125,7 @@ AUTO_PICK_ENABLED=true                # set to false to disable entirely
 LLM_PROVIDER=pollinations             # pollinations (default) | groq | google
 # GROQ_API_KEY=                       # required if LLM_PROVIDER=groq
 # GOOGLE_AI_API_KEY=                  # required if LLM_PROVIDER=google
-# PICKS_LOCK_TIME=2026-06-18T18:00:00 # override picks lock time (UTC ISO 8601)
+# PICKS_LOCK_TIME=2026-06-18 18:00:00 # YYYY-MM-DD HH:MM:SS in DISPLAY_TIMEZONE; time is optional (defaults to 00:00:00)
                                       # omit to lock at first match kickoff
 ```
 
