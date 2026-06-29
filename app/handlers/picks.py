@@ -332,8 +332,8 @@ def handle_picks_submit(ack, body, client):
 
 
 def _picks_locked(conn) -> bool:
-    kickoff = db.get_first_matchday2_kickoff(conn)
-    return kickoff is not None and is_kickoff_passed(kickoff)
+    lock_time = db.get_picks_lock_time(conn)
+    return lock_time is not None and is_kickoff_passed(lock_time)
 
 
 def _zebra_tier(team_name: str) -> str:
@@ -362,6 +362,8 @@ def _build_picks_preview_blocks(all_picks: list, caller_id: str, own_picks=None,
             "type": "section",
             "text": {"type": "mrkdwn", "text": f"*<@{caller_id}>* _(you)_\n{_picks_text(own_picks, locked=True, zebra_knocked_out=own_zebra_knocked_out)}"},
         })
+        if own_picks["is_auto"] if "is_auto" in own_picks.keys() else False:
+            blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": ":robot_face: _These picks were auto-generated — you missed the deadline._"}]})
 
     for p in others[:_EPHEMERAL_PREVIEW]:
         z_status = zebra_statuses.get(p["zebra"]) if p["zebra"] else None

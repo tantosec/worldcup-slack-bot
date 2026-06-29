@@ -74,6 +74,10 @@ def init_db():
                 sent_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
+            CREATE TABLE IF NOT EXISTS picks_lock_reminder_sent (
+                id INTEGER PRIMARY KEY CHECK (id = 1)
+            );
+
             CREATE TABLE IF NOT EXISTS predictions (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 slack_user_id TEXT NOT NULL,
@@ -108,6 +112,31 @@ def init_db():
                 group_goals_points INTEGER
             );
 
+            CREATE TABLE IF NOT EXISTS auto_match_picks (
+                match_id    INTEGER PRIMARY KEY REFERENCES matches(id),
+                pred_home   INTEGER NOT NULL,
+                pred_away   INTEGER NOT NULL,
+                reasoning   TEXT,
+                provider    TEXT NOT NULL,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS auto_tournament_picks (
+                id                 INTEGER PRIMARY KEY CHECK (id = 1),
+                winner             TEXT,
+                top_scorer         TEXT,
+                zebra              TEXT,
+                zebra_tier         TEXT,
+                semi1              TEXT,
+                semi2              TEXT,
+                semi3              TEXT,
+                semi4              TEXT,
+                group_goals_guess  INTEGER,
+                reasoning          TEXT,
+                provider           TEXT NOT NULL,
+                created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
             CREATE INDEX IF NOT EXISTS idx_predictions_match ON predictions(match_id);
             CREATE INDEX IF NOT EXISTS idx_predictions_user  ON predictions(slack_user_id);
         """)
@@ -124,6 +153,15 @@ def init_db():
         ]:
             try:
                 conn.execute(f"ALTER TABLE matches ADD COLUMN {col} {definition}")
+            except Exception:
+                pass  # Column already exists
+
+        for tbl, col, definition in [
+            ("predictions",      "is_auto", "INTEGER NOT NULL DEFAULT 0"),
+            ("tournament_picks", "is_auto", "INTEGER NOT NULL DEFAULT 0"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {definition}")
             except Exception:
                 pass  # Column already exists
 
@@ -284,7 +322,7 @@ def get_live_matches(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 def get_match_predictions_all_users(conn: sqlite3.Connection, match_id: int) -> list[sqlite3.Row]:
     """Return all enrolled users with their prediction for a match (NULL scores if no prediction)."""
     return conn.execute("""
-        SELECT u.slack_user_id, p.home_score, p.away_score
+        SELECT u.slack_user_id, p.home_score, p.away_score, COALESCE(p.is_auto, 0) AS is_auto
         FROM users u
         LEFT JOIN predictions p ON p.match_id = ? AND p.slack_user_id = u.slack_user_id
         ORDER BY u.enrolled_at ASC
@@ -628,6 +666,20 @@ def get_first_matchday2_kickoff(conn: sqlite3.Connection) -> str | None:
     return row["kickoff_utc"] if row else None
 
 
+def get_picks_lock_time(conn: sqlite3.Connection) -> str | None:
+    """Return the picks lock datetime (UTC ISO string).
+
+    Priority:
+    1. PICKS_LOCK_TIME env var (explicit override — used when bot deployed mid-tournament)
+    2. First match kickoff in DB (correct default for a properly deployed bot)
+    """
+    import os
+    override = os.getenv("PICKS_LOCK_TIME")
+    if override:
+        return override
+    return get_first_match_kickoff(conn)
+
+
 # ── Kickoff announcement queries ──────────────────────────────────────────────
 
 def get_matches_needing_kickoff_announcement(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -930,7 +982,8 @@ def get_user_finished_predictions(conn: sqlite3.Connection, slack_user_id: str) 
                m.duration, m.penalties_home, m.penalties_away,
                m.et_home, m.et_away,
                m.home_odds, m.draw_odds, m.away_odds,
-               p.home_score AS pred_home, p.away_score AS pred_away, p.points
+               p.home_score AS pred_home, p.away_score AS pred_away, p.points,
+               COALESCE(p.is_auto, 0) AS is_auto
         FROM matches m
         JOIN predictions p ON p.match_id = m.id AND p.slack_user_id = ?
         WHERE m.status = 'FINISHED'
@@ -1000,4 +1053,108 @@ def set_last_odds_sync(conn) -> None:
     conn.execute("""
         INSERT INTO odds_sync (id, last_synced_at) VALUES (1, datetime('now'))
         ON CONFLICT(id) DO UPDATE SET last_synced_at = datetime('now')
+    """)
+
+
+# ── Auto-pick queries ─────────────────────────────────────────────────────────
+
+def get_auto_match_pick(conn: sqlite3.Connection, match_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM auto_match_picks WHERE match_id = ?", (match_id,)
+    ).fetchone()
+
+
+def save_auto_match_pick(
+    conn: sqlite3.Connection, match_id: int, pred_home: int, pred_away: int,
+    reasoning: str | None, provider: str,
+):
+    conn.execute("""
+        INSERT OR REPLACE INTO auto_match_picks (match_id, pred_home, pred_away, reasoning, provider)
+        VALUES (?, ?, ?, ?, ?)
+    """, (match_id, pred_home, pred_away, reasoning, provider))
+
+
+def get_auto_tournament_picks(conn: sqlite3.Connection) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM auto_tournament_picks WHERE id = 1").fetchone()
+
+
+def save_auto_tournament_picks(
+    conn: sqlite3.Connection, winner: str, top_scorer: str,
+    semi1: str, semi2: str, semi3: str, semi4: str,
+    zebra: str, zebra_tier: str, group_goals_guess: int,
+    reasoning: str | None, provider: str,
+):
+    conn.execute("""
+        INSERT OR REPLACE INTO auto_tournament_picks
+        (id, winner, top_scorer, semi1, semi2, semi3, semi4,
+         zebra, zebra_tier, group_goals_guess, reasoning, provider)
+        VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (winner, top_scorer, semi1, semi2, semi3, semi4,
+          zebra, zebra_tier, group_goals_guess, reasoning, provider))
+
+
+def get_users_without_tournament_picks(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute("""
+        SELECT u.slack_user_id FROM users u
+        WHERE NOT EXISTS (
+            SELECT 1 FROM tournament_picks tp WHERE tp.slack_user_id = u.slack_user_id
+        )
+    """).fetchall()
+    return [r["slack_user_id"] for r in rows]
+
+
+def insert_auto_prediction(
+    conn: sqlite3.Connection, slack_user_id: str, match_id: int,
+    home_score: int, away_score: int,
+):
+    conn.execute("""
+        INSERT OR IGNORE INTO predictions
+        (slack_user_id, match_id, home_score, away_score, is_auto)
+        VALUES (?, ?, ?, ?, 1)
+    """, (slack_user_id, match_id, home_score, away_score))
+
+
+def insert_auto_tournament_pick(
+    conn: sqlite3.Connection, slack_user_id: str,
+    winner: str, top_scorer: str,
+    semi1: str, semi2: str, semi3: str, semi4: str,
+    zebra: str, zebra_tier: str, group_goals_guess: int,
+):
+    conn.execute("""
+        INSERT OR IGNORE INTO tournament_picks
+        (slack_user_id, winner, top_scorer, semi1, semi2, semi3, semi4,
+         zebra, zebra_tier, group_goals_guess, is_auto)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    """, (slack_user_id, winner, top_scorer, semi1, semi2, semi3, semi4,
+          zebra, zebra_tier, group_goals_guess))
+
+
+def get_matches_needing_auto_pick_generation(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Matches with a reminder sent but no auto_match_pick cached yet.
+
+    These are matches where the 1h reminder has fired (so the LLM generation
+    window is open) but we haven't called the LLM yet.
+    """
+    return conn.execute("""
+        SELECT m.* FROM matches m
+        WHERE m.reminder_sent = 1
+          AND m.status IN ('SCHEDULED', 'TIMED')
+          AND NOT EXISTS (
+              SELECT 1 FROM auto_match_picks amp WHERE amp.match_id = m.id
+          )
+        ORDER BY m.kickoff_utc ASC
+        LIMIT 1
+    """).fetchall()
+
+
+def picks_lock_reminder_sent(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM picks_lock_reminder_sent WHERE id = 1"
+    ).fetchone()
+    return row is not None
+
+
+def mark_picks_lock_reminder_sent(conn: sqlite3.Connection):
+    conn.execute("""
+        INSERT OR IGNORE INTO picks_lock_reminder_sent (id) VALUES (1)
     """)

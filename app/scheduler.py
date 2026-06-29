@@ -13,6 +13,10 @@ from app.espn import (
 from app.football import format_kickoff, format_score, format_score_note, stage_label, estimate_match_time
 from app.odds import fetch_and_store_odds, sync_odds_if_stale, format_prob_line, format_underdog_line
 from app.scoring import calculate_points, points_label, score_semi_picks, score_group_goals
+from app.autopick import (
+    get_or_generate_auto_match_pick, get_or_generate_auto_tournament_picks,
+    apply_auto_picks_for_match, apply_auto_tournament_picks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -773,6 +777,9 @@ def send_kickoff_announcements(slack_client):
         matches = db.get_matches_needing_kickoff_announcement(conn)
 
     for match in matches:
+        # Apply any cached auto-picks before announcing (silent if none needed)
+        apply_auto_picks_for_match(slack_client, match)
+
         with db.db() as conn:
             all_preds = db.get_match_predictions_all_users(conn, match["id"])
             enrolled = db.get_enrolled_users(conn)
@@ -802,7 +809,12 @@ def send_kickoff_announcements(slack_client):
 
         predicted_ids = {p["slack_user_id"] for p in all_preds if p["home_score"] is not None}
         pred_pairs = [
-            (f"<@{p['slack_user_id']}>", f"`{p['home_score']} - {p['away_score']}`")
+            (
+                f"<@{p['slack_user_id']}>",
+                f":robot_face: `{p['home_score']} - {p['away_score']}`"
+                if p["is_auto"] else
+                f"`{p['home_score']} - {p['away_score']}`"
+            )
             for p in all_preds if p["home_score"] is not None
         ]
 
@@ -881,6 +893,16 @@ def send_kickoff_reminders(slack_client):
                 db.mark_reminder_sent(conn, match["id"])
         except Exception as exc:
             logger.error("Failed to post kickoff reminder: %s", exc)
+            continue
+
+        # Fire LLM pick generation in background so it's cached by kickoff time
+        import os as _os
+        if _os.getenv("AUTO_PICK_ENABLED", "true").lower() == "true":
+            try:
+                get_or_generate_auto_match_pick(match)
+            except Exception as exc:
+                logger.error("Failed to generate auto match pick for %s vs %s: %s",
+                             match["home_team"], match["away_team"], exc)
 
 
 # ─── Matchday wrap ────────────────────────────────────────────────────────────
@@ -945,6 +967,62 @@ def send_matchday_wrap(slack_client):
             logger.error("Failed to post matchday wrap for %s: %s", match_date, exc)
 
 
+# ─── Picks lock reminder ──────────────────────────────────────────────────────
+
+def send_picks_lock_reminder(slack_client):
+    """Post a channel reminder ~1 hour before tournament picks lock, and pre-generate auto picks."""
+    channel = os.getenv("RESULTS_CHANNEL")
+    if not channel:
+        return
+
+    with db.db() as conn:
+        if db.picks_lock_reminder_sent(conn):
+            return
+        lock_time = db.get_picks_lock_time(conn)
+        if not lock_time:
+            return
+        from app.football import is_kickoff_passed
+        # Fire when 50–70 min before lock
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc)
+        lock_dt = datetime.fromisoformat(lock_time.replace("Z", "+00:00"))
+        if not lock_dt.tzinfo:
+            lock_dt = lock_dt.replace(tzinfo=timezone.utc)
+        minutes_until = (lock_dt - now).total_seconds() / 60
+        if not (50 <= minutes_until <= 70):
+            return
+        missing = db.get_users_without_tournament_picks(conn)
+        db.mark_picks_lock_reminder_sent(conn)
+
+    blocks = [
+        _block_section("🔒  *TOURNAMENT PICKS LOCK IN ~1 HOUR*"),
+        _block_divider(),
+        _block_section(
+            "Winner, Golden Boot, Semi-finalists, Zebra pick and Group Goals guess "
+            "will lock soon — last chance!\nUse `/picks` to submit before it's too late."
+        ),
+    ]
+
+    if missing:
+        mentions = "  ".join(f"<@{u}>" for u in missing)
+        blocks.append(_block_section(f"🔔  {mentions}\nHaven't submitted picks yet!"))
+    else:
+        blocks.append(_block_section(":white_check_mark:  Everyone has submitted their picks!"))
+
+    try:
+        _post_attachment(slack_client, channel, "Tournament picks lock in ~1 hour!", "#e65100", blocks)
+    except Exception as exc:
+        logger.error("Failed to post picks lock reminder: %s", exc)
+
+    # Pre-generate auto tournament picks so they're ready at lock time
+    import os as _os
+    if _os.getenv("AUTO_PICK_ENABLED", "true").lower() == "true" and missing:
+        try:
+            get_or_generate_auto_tournament_picks()
+        except Exception as exc:
+            logger.error("Failed to pre-generate auto tournament picks: %s", exc)
+
+
 # ─── Picks reveal ─────────────────────────────────────────────────────────────
 
 def post_picks_reveal(slack_client, force: bool = False):
@@ -957,9 +1035,11 @@ def post_picks_reveal(slack_client, force: bool = False):
         if not force and db.picks_reveal_already_sent(conn):
             return
         from app.football import is_kickoff_passed
-        kickoff = db.get_first_matchday2_kickoff(conn)
-        if not force and (kickoff is None or not is_kickoff_passed(kickoff)):
+        lock_time = db.get_picks_lock_time(conn)
+        if not force and (lock_time is None or not is_kickoff_passed(lock_time)):
             return
+        # Apply auto tournament picks to anyone who missed the deadline
+        apply_auto_tournament_picks(slack_client)
         picks = db.get_all_picks_for_reveal(conn)
         if not picks:
             return
@@ -1658,6 +1738,10 @@ def start_scheduler(slack_client=None) -> BackgroundScheduler:
     scheduler.add_job(
         lambda: send_kickoff_reminders(slack_client),
         "interval", seconds=poll_interval, id="kickoff_reminders",
+    )
+    scheduler.add_job(
+        lambda: send_picks_lock_reminder(slack_client),
+        "interval", seconds=poll_interval, id="picks_lock_reminder",
     )
     scheduler.add_job(
         lambda: send_matchday_wrap(slack_client),

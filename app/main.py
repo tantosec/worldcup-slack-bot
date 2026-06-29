@@ -51,6 +51,8 @@ def _validate_env():
         ZoneInfo(tz)
     except Exception:
         raise SystemExit(f"Invalid DISPLAY_TIMEZONE: '{tz}' — use a valid tz name e.g. 'Australia/Sydney'")
+    from app.llm import validate_llm_config
+    validate_llm_config()
 
 _validate_env()
 

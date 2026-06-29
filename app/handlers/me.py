@@ -103,6 +103,8 @@ def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]
 
     if picks and (not viewing_other or picks_revealed):
         blocks.append(_section(_picks_text(picks, picks_locked, zebra_knocked_out)))
+        if picks["is_auto"] if "is_auto" in picks.keys() else False:
+            blocks.append(_context(":robot_face: _These picks were auto-generated — you missed the deadline._"))
     elif viewing_other and not picks_revealed:
         blocks.append(_context("_Picks are revealed after Matchday 2 locks._"))
     else:
@@ -132,7 +134,9 @@ def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]
                 pts = p["points"] or 0
                 pred_str = f"{p['pred_home']} - {p['pred_away']}"
 
-                if p["pred_home"] == p["act_home"] and p["pred_away"] == p["act_away"]:
+                if p.get("is_auto"):
+                    icon = ":robot_face:"
+                elif p["pred_home"] == p["act_home"] and p["pred_away"] == p["act_away"]:
                     icon = ":dart:"
                 elif pts > 0:
                     icon = ":white_check_mark:"
@@ -350,9 +354,9 @@ def _picks_text(picks, locked: bool, zebra_knocked_out: bool | None = None) -> s
 
 
 def _picks_locked(conn) -> bool:
-    kickoff = db.get_first_matchday2_kickoff(conn)
+    lock_time = db.get_picks_lock_time(conn)
     from app.football import is_kickoff_passed
-    return kickoff is not None and is_kickoff_passed(kickoff)
+    return lock_time is not None and is_kickoff_passed(lock_time)
 
 
 def _lookup_user_by_name(client, username: str) -> str | None:
