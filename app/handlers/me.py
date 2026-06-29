@@ -43,6 +43,7 @@ def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]
         finished_preds = db.get_user_finished_predictions(conn, target_id)
         upcoming_preds = [] if viewing_other else db.get_user_upcoming_predictions(conn, target_id)
         missed, still_to_predict = (0, 0) if viewing_other else db.get_user_prediction_gaps(conn, target_id)
+        zebra_knocked_out = db.team_knocked_out(conn, picks["zebra"]) if picks and picks.get("zebra") else None
 
     if viewing_other:
         try:
@@ -68,7 +69,8 @@ def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]
         if picks["scorer_points"] is not None:
             bonus_fields.append({"type": "mrkdwn", "text": f":athletic_shoe: *Golden Boot*\n{picks['scorer_points']} pts"})
         if picks["zebra_points"] is not None:
-            bonus_fields.append({"type": "mrkdwn", "text": f":zebra_face: *Zebra*\n{picks['zebra_points']} pts"})
+            z_status = "  :fire:" if zebra_knocked_out is False else ("  :skull:" if zebra_knocked_out else "")
+            bonus_fields.append({"type": "mrkdwn", "text": f":zebra_face: *Zebra*\n{picks['zebra_points']} pts{z_status}"})
         if picks["semi_points"] is not None:
             bonus_fields.append({"type": "mrkdwn", "text": f":four: *Semis*\n{picks['semi_points']} pts"})
         if picks["group_goals_points"] is not None:
@@ -94,7 +96,7 @@ def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]
     blocks += [_divider(), _section("🔮  *Tournament Picks*")]
 
     if picks and (not viewing_other or picks_revealed):
-        blocks.append(_section(_picks_text(picks, picks_locked)))
+        blocks.append(_section(_picks_text(picks, picks_locked, zebra_knocked_out)))
     elif viewing_other and not picks_revealed:
         blocks.append(_context("_Picks are revealed after Matchday 2 locks._"))
     else:
@@ -277,7 +279,7 @@ def handle_mystats_modal_nav(ack, body, client):
     client.views_update(view_id=body["view"]["id"], view=view)
 
 
-def _picks_text(picks, locked: bool) -> str:
+def _picks_text(picks, locked: bool, zebra_knocked_out: bool | None = None) -> str:
     lines = []
 
     w = picks["winner"]
@@ -325,10 +327,16 @@ def _picks_text(picks, locked: bool) -> str:
     if zebra:
         tier_label = ":black_joker: Wildcard" if picks["zebra_tier"] == "WILDCARD" else "⭐ Bold"
         z_pts = picks["zebra_points"]
-        z_line = f":zebra_face: Zebra: *{flag(zebra)} {zebra}* ({tier_label})"
+        if zebra_knocked_out is True:
+            status = "  :skull: *Eliminated!*"
+        elif zebra_knocked_out is False:
+            status = "  :fire: *Still Alive!*"
+        else:
+            status = ""
+        z_line = f":zebra_face: Zebra: *{flag(zebra)} {zebra}* ({tier_label}){status}"
         if z_pts is not None:
             z_line += f"  → *{z_pts} pts*" if z_pts > 0 else "  → :x: 0 pts"
-        else:
+        elif not status:
             z_line += "  _(pending)_"
         lines.append(z_line)
 

@@ -77,12 +77,13 @@ def open_picks_modal(client, trigger_id: str, slack_user_id: str, response_url: 
     if locked and existing:
         with db.db() as conn:
             all_picks = db.get_all_picks_for_reveal(conn)
+            own_zebra_knocked_out = db.team_knocked_out(conn, existing["zebra"]) if existing.get("zebra") else None
 
         # DM: just the user's own picks
         from app.handlers.me import _picks_text
         client.chat_postMessage(
             channel=slack_user_id,
-            text=f":lock: *Your Tournament Picks*\n{_picks_text(existing, locked=True)}",
+            text=f":lock: *Your Tournament Picks*\n{_picks_text(existing, locked=True, zebra_knocked_out=own_zebra_knocked_out)}",
         )
 
         # Channel ephemeral: preview of others + "see all" button
@@ -349,15 +350,24 @@ def _zebra_tier(team_name: str) -> str:
 def _build_picks_preview_blocks(all_picks: list, caller_id: str) -> list:
     from app.handlers.me import _picks_text
     others = [p for p in all_picks if p["slack_user_id"] != caller_id]
+
+    zebra_teams = {p["zebra"] for p in others[:_EPHEMERAL_PREVIEW] if p.get("zebra")}
+    zebra_statuses = {}
+    if zebra_teams:
+        with db.db() as conn:
+            for team in zebra_teams:
+                zebra_statuses[team] = db.team_knocked_out(conn, team)
+
     blocks = [
         {"type": "header", "text": {"type": "plain_text", "text": "🔮 Everyone's Picks", "emoji": True}},
         {"type": "context", "elements": [{"type": "mrkdwn", "text": "_Picks are locked. Points update as the tournament progresses._"}]},
     ]
     for p in others[:_EPHEMERAL_PREVIEW]:
+        z_status = zebra_statuses.get(p["zebra"]) if p.get("zebra") else None
         blocks.append({"type": "divider"})
         blocks.append({
             "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*<@{p['slack_user_id']}>*\n{_picks_text(p, locked=True)}"},
+            "text": {"type": "mrkdwn", "text": f"*<@{p['slack_user_id']}>*\n{_picks_text(p, locked=True, zebra_knocked_out=z_status)}"},
         })
     if len(others) > _EPHEMERAL_PREVIEW:
         blocks.append({"type": "divider"})
@@ -377,13 +387,22 @@ def _build_picks_modal_view(all_picks: list, caller_id: str, page: int = 0) -> d
     total_pages = max(1, -(-total // PICKS_MODAL_PAGE_SIZE))
     page = max(0, min(page, total_pages - 1))
     start = page * PICKS_MODAL_PAGE_SIZE
+    page_picks = others[start:start + PICKS_MODAL_PAGE_SIZE]
+
+    zebra_teams = {p["zebra"] for p in page_picks if p.get("zebra")}
+    zebra_statuses = {}
+    if zebra_teams:
+        with db.db() as conn:
+            for team in zebra_teams:
+                zebra_statuses[team] = db.team_knocked_out(conn, team)
 
     blocks = []
-    for p in others[start:start + PICKS_MODAL_PAGE_SIZE]:
+    for p in page_picks:
+        z_status = zebra_statuses.get(p["zebra"]) if p.get("zebra") else None
         blocks.append({"type": "divider"})
         blocks.append({
             "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*<@{p['slack_user_id']}>*\n{_picks_text(p, locked=True)}"},
+            "text": {"type": "mrkdwn", "text": f"*<@{p['slack_user_id']}>*\n{_picks_text(p, locked=True, zebra_knocked_out=z_status)}"},
         })
 
     nav_elements = []
