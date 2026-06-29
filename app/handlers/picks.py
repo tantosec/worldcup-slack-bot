@@ -374,6 +374,8 @@ def _build_picks_preview_blocks(all_picks: list, caller_id: str, own_picks=None,
             "type": "section",
             "text": {"type": "mrkdwn", "text": f"*<@{p['slack_user_id']}>*\n{_picks_text(p, locked=True, zebra_knocked_out=z_status)}"},
         })
+        if p["is_auto"]:
+            blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": ":robot_face: _Auto-generated — missed the deadline._"}]})
     if len(others) > _EPHEMERAL_PREVIEW:
         blocks.append({"type": "divider"})
         blocks.append({"type": "actions", "elements": [{
@@ -409,6 +411,8 @@ def _build_picks_modal_view(all_picks: list, caller_id: str, page: int = 0) -> d
             "type": "section",
             "text": {"type": "mrkdwn", "text": f"*<@{p['slack_user_id']}>*\n{_picks_text(p, locked=True, zebra_knocked_out=z_status)}"},
         })
+        if p["is_auto"]:
+            blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": ":robot_face: _Auto-generated — missed the deadline._"}]})
 
     nav_elements = []
     if page > 0:

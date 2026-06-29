@@ -1062,7 +1062,8 @@ def post_picks_reveal(slack_client, force: bool = False):
     ]
 
     for p in picks:
-        pick_lines = [f"*<@{p['slack_user_id']}>*"]
+        header = f"*<@{p['slack_user_id']}>*" + (" :robot_face:" if p["is_auto"] else "")
+        pick_lines = [header]
 
         if p["winner"]:
             pick_lines.append(f":first_place_medal: Winner: *{flag(p['winner'])} {p['winner']}*")

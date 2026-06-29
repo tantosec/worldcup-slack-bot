@@ -66,7 +66,8 @@ def _match_blocks(m, pred) -> list:
 
     if pred:
         pts = points_label(pred["points"])
-        pick_text = f":pencil: Your pick: *{pred['home_score']} - {pred['away_score']}*  →  *{pts}*"
+        pick_icon = ":robot_face:" if pred["is_auto"] else ":pencil:"
+        pick_text = f"{pick_icon} Your pick: *{pred['home_score']} - {pred['away_score']}*  →  *{pts}*"
     else:
         pick_text = ":zipper_mouth_face: _(no prediction)_"
     blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": pick_text}]})

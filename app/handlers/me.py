@@ -236,9 +236,10 @@ def _build_upcoming_modal_view(target_id: str, page: int = 0) -> dict:
     for p in upcoming_preds[start:start + _MODAL_PAGE_SIZE]:
         venue_parts = [x for x in [p["venue_name"], p["venue_city"]] if x]
         venue_str = ("  ·  " + ", ".join(venue_parts)) if venue_parts else ""
+        pick_icon = ":robot_face:" if p["is_auto"] else ":pencil:"
         blocks.append(_section(
             f"*{vs(p['home_team'], p['away_team'])}*  ·  {format_kickoff(p['kickoff_utc'])}{venue_str}\n"
-            f":pencil: Your pick: *{p['pred_home']} - {p['pred_away']}*"
+            f"{pick_icon} Your pick: *{p['pred_home']} - {p['pred_away']}*"
         ))
         context_parts = [x for x in [format_prob_line(p), format_underdog_line(p, action=True)] if x]
         if context_parts:
