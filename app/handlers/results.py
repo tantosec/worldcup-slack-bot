@@ -5,9 +5,8 @@ from app.football import format_kickoff, format_score, format_score_note, stage_
 from app.odds import format_prob_line, format_underdog_line
 from app.scoring import points_label
 
-SHOW_MORE_RESULTS_ACTION = "results_show_more"
-_DEFAULT_SHOWN = 4
-_MAX_BLOCKS = 47
+RESULTS_PAGE_ACTION = "results_page"
+_PAGE_SIZE = 4
 
 
 def _match_blocks(m, pred) -> list:
@@ -70,9 +69,9 @@ def _match_blocks(m, pred) -> list:
     return blocks
 
 
-def _build_results_blocks(slack_user_id: str, show_all: bool = False) -> list | None:
+def _build_results_blocks(slack_user_id: str, page: int = 0) -> list | None:
     with db.db() as conn:
-        matches = db.get_recent_matches(conn, limit=20)
+        matches = db.get_all_finished_matches(conn)
         if not matches:
             return None
         preds = {
@@ -80,35 +79,37 @@ def _build_results_blocks(slack_user_id: str, show_all: bool = False) -> list | 
             for p in db.get_user_predictions_with_matches(conn, slack_user_id)
         }
 
-    header = [{"type": "header", "text": {"type": "plain_text", "text": "🏁 FIFA World Cup 2026 — Recent Results", "emoji": True}}]
-    blocks = list(header)
-    spare = _MAX_BLOCKS - len(blocks)
+    total = len(matches)
+    total_pages = max(1, -(-total // _PAGE_SIZE))
+    page = max(0, min(page, total_pages - 1))
+    start = page * _PAGE_SIZE
+    page_matches = matches[start:start + _PAGE_SIZE]
 
-    candidates = matches if show_all else matches[:_DEFAULT_SHOWN]
-    remaining_count = max(0, len(matches) - _DEFAULT_SHOWN) if not show_all else 0
-    overflow_count = 0
+    blocks = [{"type": "header", "text": {"type": "plain_text", "text": "🏁 FIFA World Cup 2026 — Recent Results", "emoji": True}}]
 
-    for m in candidates:
+    for m in page_matches:
         pred = preds.get(m["id"])
-        mb = _match_blocks(m, pred)
-        if spare - len(mb) < 1:
-            overflow_count = candidates[candidates.index(m):]
-            overflow_count = len(overflow_count)
-            break
-        blocks.extend(mb)
-        spare -= len(mb)
+        blocks.extend(_match_blocks(m, pred))
 
-    if not show_all and remaining_count > 0:
-        blocks.append({
-            "type": "actions",
-            "elements": [{
-                "type": "button",
-                "text": {"type": "plain_text", "text": f"Show {remaining_count} more results", "emoji": True},
-                "action_id": SHOW_MORE_RESULTS_ACTION,
-            }],
+    nav_elements = []
+    if page > 0:
+        nav_elements.append({
+            "type": "button",
+            "text": {"type": "plain_text", "text": "← Newer", "emoji": True},
+            "action_id": RESULTS_PAGE_ACTION,
+            "value": str(page - 1),
         })
-    elif overflow_count:
-        blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": f"_…and {overflow_count} more results not shown_"}]})
+    if page < total_pages - 1:
+        nav_elements.append({
+            "type": "button",
+            "text": {"type": "plain_text", "text": "Older →", "emoji": True},
+            "action_id": RESULTS_PAGE_ACTION,
+            "value": str(page + 1),
+        })
+    if nav_elements:
+        blocks.append({"type": "divider"})
+        blocks.append({"type": "actions", "elements": nav_elements})
+        blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": f"_Page {page + 1} of {total_pages}  ·  {total} results total_"}]})
 
     return blocks
 
@@ -122,10 +123,11 @@ def handle_results(respond, body):
     respond(response_type="ephemeral", blocks=blocks, text="FIFA World Cup 2026 — Recent Results")
 
 
-def handle_results_show_more(ack, respond, body):
+def handle_results_page(ack, respond, body):
     ack()
     slack_user_id = body["user"]["id"]
-    blocks = _build_results_blocks(slack_user_id, show_all=True)
+    page = int(body["actions"][0]["value"])
+    blocks = _build_results_blocks(slack_user_id, page=page)
     if blocks is None:
         respond(response_type="ephemeral", text="No results found.")
         return

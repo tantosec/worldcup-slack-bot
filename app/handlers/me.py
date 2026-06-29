@@ -9,6 +9,9 @@ from app.scoring import TOURNAMENT_PICK_POINTS, SEMI_PICK_POINTS
 
 logger = logging.getLogger(__name__)
 
+MYSTATS_UPCOMING_PAGE_ACTION = "mystats_upcoming_page"
+_UPCOMING_PAGE_SIZE = 5
+
 
 def _section(text: str) -> dict:
     return {"type": "section", "text": {"type": "mrkdwn", "text": text}}
@@ -22,31 +25,11 @@ def _divider() -> dict:
     return {"type": "divider"}
 
 
-def handle_me(respond, body, client):
-    caller_id = body["user_id"]
-    text = (body.get("text") or "").strip()
-    logger.info("/mystats called by %s with text: %r", caller_id, text)
-
-    target_id = caller_id
-    viewing_other = False
-
-    mention = re.search(r"<@([A-Z0-9]+)(?:\|[^>]+)?>", text)
-    if mention:
-        target_id = mention.group(1)
-        viewing_other = target_id != caller_id
-    elif text.startswith("@"):
-        username = text[1:].lower()
-        target_id = _lookup_user_by_name(client, username) or caller_id
-        viewing_other = target_id != caller_id
+def _build_me_blocks(target_id: str, caller_id: str, client, upcoming_page: int = 0) -> tuple[list, str]:
+    """Build blocks for /mystats. Returns (blocks, title)."""
+    viewing_other = target_id != caller_id
 
     with db.db() as conn:
-        if not db.is_enrolled(conn, target_id):
-            if viewing_other:
-                respond(response_type="ephemeral", text=f":shrug: <@{target_id}> hasn't joined the league yet.")
-            else:
-                respond(response_type="ephemeral", text=":wave: You're not enrolled yet — use `/register` to join!")
-            return
-
         stats = db.get_user_match_stats(conn, target_id)
         picks = db.get_tournament_pick(conn, target_id)
         rank, total_points = db.get_user_rank_and_total(conn, target_id)
@@ -74,7 +57,6 @@ def handle_me(respond, body, client):
     match_pts = stats["match_points"] or 0
     tournament_pts = (total_points or 0) - match_pts
 
-    # Per-category tournament pick breakdown (only show scored categories)
     bonus_fields = []
     if picks:
         if picks["winner_points"] is not None:
@@ -88,8 +70,9 @@ def handle_me(respond, body, client):
         if picks["group_goals_points"] is not None:
             bonus_fields.append({"type": "mrkdwn", "text": f":goal_net: *Group goals*\n{picks['group_goals_points']} pts"})
 
+    title = f"📊 {header_name} World Cup 2026 Stats"
     blocks = [
-        {"type": "header", "text": {"type": "plain_text", "text": f"📊 {header_name} World Cup 2026 Stats", "emoji": True}},
+        {"type": "header", "text": {"type": "plain_text", "text": title, "emoji": True}},
         {
             "type": "section",
             "fields": [
@@ -125,7 +108,6 @@ def handle_me(respond, body, client):
     blocks += [_divider(), _section(f"⚽  *Match Predictions* ({count_str})")]
 
     if finished_preds:
-        # Group by stage preserving kickoff order
         by_stage = {}
         for p in finished_preds:
             by_stage.setdefault(p["stage"], []).append(p)
@@ -175,10 +157,14 @@ def handle_me(respond, body, client):
     else:
         blocks.append(_context("_No finished matches predicted yet._"))
 
+    # ── Upcoming (paginated) ──────────────────────────────────────────────────
     if upcoming_preds:
-        _UPCOMING_LIMIT = 5
-        shown = upcoming_preds[:_UPCOMING_LIMIT]
-        hidden = len(upcoming_preds) - len(shown)
+        total_upcoming = len(upcoming_preds)
+        total_pages = max(1, -(-total_upcoming // _UPCOMING_PAGE_SIZE))
+        upcoming_page = max(0, min(upcoming_page, total_pages - 1))
+        start = upcoming_page * _UPCOMING_PAGE_SIZE
+        shown = upcoming_preds[start:start + _UPCOMING_PAGE_SIZE]
+
         blocks += [_divider(), _section("⏰  *Upcoming*")]
         for p in shown:
             venue_parts = [x for x in [p["venue_name"], p["venue_city"]] if x]
@@ -187,14 +173,71 @@ def handle_me(respond, body, client):
                 f"*{vs(p['home_team'], p['away_team'])}*  ·  {format_kickoff(p['kickoff_utc'])}{venue_str}\n"
                 f":pencil: Your pick: *{p['pred_home']} - {p['pred_away']}*"
             ))
-            # Combine odds + underdog into one context block to save blocks
             context_parts = [x for x in [format_prob_line(p), format_underdog_line(p, action=True)] if x]
             if context_parts:
                 blocks.append(_context("  ·  ".join(context_parts)))
-        if hidden:
-            blocks.append(_context(f"_...and {hidden} more — use `/predict` to manage all picks_"))
 
-    respond(response_type="ephemeral", blocks=blocks, text=f"📊 {header_name} World Cup 2026 Stats")
+        nav_elements = []
+        if upcoming_page > 0:
+            nav_elements.append({
+                "type": "button",
+                "text": {"type": "plain_text", "text": "← Previous", "emoji": True},
+                "action_id": MYSTATS_UPCOMING_PAGE_ACTION,
+                "value": f"{target_id}:{upcoming_page - 1}",
+            })
+        if upcoming_page < total_pages - 1:
+            nav_elements.append({
+                "type": "button",
+                "text": {"type": "plain_text", "text": "Next →", "emoji": True},
+                "action_id": MYSTATS_UPCOMING_PAGE_ACTION,
+                "value": f"{target_id}:{upcoming_page + 1}",
+            })
+        if nav_elements:
+            blocks.append({"type": "actions", "elements": nav_elements})
+        if total_pages > 1:
+            blocks.append(_context(f"_Page {upcoming_page + 1} of {total_pages}  ·  {total_upcoming} upcoming predictions_"))
+
+    return blocks, title
+
+
+def handle_me(respond, body, client):
+    caller_id = body["user_id"]
+    text = (body.get("text") or "").strip()
+    logger.info("/mystats called by %s with text: %r", caller_id, text)
+
+    target_id = caller_id
+
+    mention = re.search(r"<@([A-Z0-9]+)(?:\|[^>]+)?>", text)
+    if mention:
+        target_id = mention.group(1)
+    elif text.startswith("@"):
+        username = text[1:].lower()
+        target_id = _lookup_user_by_name(client, username) or caller_id
+
+    with db.db() as conn:
+        if not db.is_enrolled(conn, target_id):
+            if target_id != caller_id:
+                respond(response_type="ephemeral", text=f":shrug: <@{target_id}> hasn't joined the league yet.")
+            else:
+                respond(response_type="ephemeral", text=":wave: You're not enrolled yet — use `/register` to join!")
+            return
+
+    blocks, title = _build_me_blocks(target_id, caller_id, client, upcoming_page=0)
+    respond(response_type="ephemeral", blocks=blocks, text=title)
+
+
+def handle_mystats_upcoming_page(ack, respond, body, client):
+    ack()
+    caller_id = body["user"]["id"]
+    with db.db() as conn:
+        if not db.is_enrolled(conn, caller_id):
+            respond(replace_original=True, text=":wave: You're not enrolled in the league anymore.")
+            return
+    value = body["actions"][0]["value"]
+    target_id, page_str = value.rsplit(":", 1)
+    page = int(page_str)
+    blocks, title = _build_me_blocks(target_id, caller_id, client, upcoming_page=page)
+    respond(replace_original=True, blocks=blocks, text=title)
 
 
 def _picks_text(picks, locked: bool) -> str:

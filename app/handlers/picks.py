@@ -10,6 +10,8 @@ from app.scoring import (
 
 CALLBACK_ID = "submit_tournament_picks"
 WINNER_ACTION = "pick_winner"
+PICKS_PAGE_ACTION = "picks_page"
+PICKS_PAGE_SIZE = 10
 SCORER_ACTION = "pick_scorer"
 ZEBRA_ACTION = "pick_zebra"
 SEMI_ACTIONS = ["pick_semi1", "pick_semi2", "pick_semi3", "pick_semi4"]
@@ -68,26 +70,14 @@ def open_picks_modal(client, trigger_id: str, slack_user_id: str):
         return
 
     if locked and existing:
-        semis = [existing[f"semi{i}"] for i in range(1, 5) if existing[f"semi{i}"]]
-        semi_txt = ""
-        if semis:
-            semi_txt = "\n  :four: Semis: " + "  ·  ".join(f"*{flag(t)} {t}*" for t in semis)
-        zebra_txt = ""
-        if existing["zebra"]:
-            tier_label = ":black_joker: Wildcard" if existing["zebra_tier"] == "WILDCARD" else "⭐ Bold"
-            zebra_txt = f"\n  :zebra_face: Zebra: *{flag(existing['zebra'])} {existing['zebra']}* ({tier_label})"
-        goals_txt = ""
-        if existing["group_goals_guess"] is not None:
-            goals_txt = f"\n  :goal_net: Group goals guess: *{existing['group_goals_guess']}*"
+        with db.db() as conn:
+            all_picks = db.get_all_picks_for_reveal(conn)
+        blocks = _build_picks_page_blocks(all_picks, existing, slack_user_id, page=0)
         client.chat_postEphemeral(
             channel=slack_user_id,
             user=slack_user_id,
-            text=(
-                f":lock: Your picks are locked in!\n"
-                f"  :trophy: Winner: *{flag(existing['winner'])} {existing['winner']}*\n"
-                f"  :athletic_shoe: Golden Boot: *{existing['top_scorer']}*"
-                f"{semi_txt}{zebra_txt}{goals_txt}"
-            ),
+            blocks=blocks,
+            text="🔒 Tournament Picks",
         )
         return
 
@@ -340,3 +330,63 @@ def _picks_locked(conn) -> bool:
 
 def _zebra_tier(team_name: str) -> str:
     return "WILDCARD" if team_name in ZEBRA_WILDCARD else "BOLD"
+
+
+def _build_picks_page_blocks(all_picks: list, my_pick, caller_id: str, page: int) -> list:
+    """Build blocks for a paginated picks reveal. Page 0 shows the caller's own picks + first page of others."""
+    from app.handlers.me import _picks_text
+
+    others = [p for p in all_picks if p["slack_user_id"] != caller_id]
+    total_pages = max(1, -(-len(others) // PICKS_PAGE_SIZE))  # ceil division
+    start = page * PICKS_PAGE_SIZE
+    page_picks = others[start:start + PICKS_PAGE_SIZE]
+
+    blocks = [
+        {"type": "header", "text": {"type": "plain_text", "text": "🔒 Your Tournament Picks", "emoji": True}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": _picks_text(my_pick, locked=True)}},
+        {"type": "context", "elements": [{"type": "mrkdwn", "text": "_Picks are locked. Points update as the tournament progresses._"}]},
+        {"type": "divider"},
+        {"type": "header", "text": {"type": "plain_text", "text": f"🔮 Everyone's Picks  ({page + 1}/{total_pages})", "emoji": True}},
+    ]
+
+    for p in page_picks:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*<@{p['slack_user_id']}>*\n{_picks_text(p, locked=True)}"},
+        })
+        blocks.append({"type": "divider"})
+
+    # Pagination buttons
+    nav_elements = []
+    if page > 0:
+        nav_elements.append({
+            "type": "button",
+            "text": {"type": "plain_text", "text": "← Previous", "emoji": True},
+            "action_id": PICKS_PAGE_ACTION,
+            "value": str(page - 1),
+        })
+    if page < total_pages - 1:
+        nav_elements.append({
+            "type": "button",
+            "text": {"type": "plain_text", "text": "Next →", "emoji": True},
+            "action_id": PICKS_PAGE_ACTION,
+            "value": str(page + 1),
+        })
+    if nav_elements:
+        blocks.append({"type": "actions", "elements": nav_elements})
+
+    return blocks
+
+
+def handle_picks_page_action(ack, body, respond):
+    ack()
+    page = int(body["actions"][0]["value"])
+    caller_id = body["user"]["id"]
+    with db.db() as conn:
+        all_picks = db.get_all_picks_for_reveal(conn)
+        my_pick = db.get_tournament_pick(conn, caller_id)
+    if not my_pick:
+        respond(replace_original=True, text=":shrug: Couldn't load your tournament picks.")
+        return
+    blocks = _build_picks_page_blocks(all_picks, my_pick, caller_id, page)
+    respond(replace_original=True, blocks=blocks, text="🔒 Tournament Picks")

@@ -257,6 +257,22 @@ def get_upcoming_matches(conn: sqlite3.Connection, limit: int = 10) -> list[sqli
     """, (limit,)).fetchall()
 
 
+def get_all_upcoming_matches(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("""
+        SELECT * FROM matches
+        WHERE status IN ('SCHEDULED', 'TIMED')
+        ORDER BY kickoff_utc ASC
+    """).fetchall()
+
+
+def get_all_finished_matches(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("""
+        SELECT * FROM matches
+        WHERE status = 'FINISHED'
+        ORDER BY kickoff_utc DESC
+    """).fetchall()
+
+
 def get_live_matches(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("""
         SELECT * FROM matches

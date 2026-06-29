@@ -14,13 +14,13 @@ from app.handlers.predict import (
     CALLBACK_ID, DATE_ACTION,
 )
 from app.handlers.enroll import handle_enroll
-from app.handlers.picks import open_picks_modal, handle_picks_submit, CALLBACK_ID as PICKS_CALLBACK_ID, SCORER_ACTION
+from app.handlers.picks import open_picks_modal, handle_picks_submit, handle_picks_page_action, CALLBACK_ID as PICKS_CALLBACK_ID, SCORER_ACTION, PICKS_PAGE_ACTION
 from app.players import search as search_players
 from app.handlers.leaderboard import handle_leaderboard
-from app.handlers.fixtures import handle_fixtures, handle_fixtures_show_more, SHOW_MORE_ACTION
-from app.handlers.results import handle_results, handle_results_show_more, SHOW_MORE_RESULTS_ACTION
+from app.handlers.fixtures import handle_fixtures, handle_fixtures_page, FIXTURES_PAGE_ACTION
+from app.handlers.results import handle_results, handle_results_page, RESULTS_PAGE_ACTION
 from app.handlers.scoring import handle_scoring
-from app.handlers.me import handle_me
+from app.handlers.me import handle_me, handle_mystats_upcoming_page, MYSTATS_UPCOMING_PAGE_ACTION
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -75,6 +75,11 @@ def view_picks(ack, body, client):
     handle_picks_submit(ack, body, client)
 
 
+@app.action(PICKS_PAGE_ACTION)
+def action_picks_page(ack, body, respond):
+    handle_picks_page_action(ack, body, respond)
+
+
 # ── External select: golden boot player search ────────────────────────────────
 @app.options(SCORER_ACTION)
 def options_scorer(ack, payload):
@@ -121,9 +126,9 @@ def cmd_fixtures(ack, respond, body):
     handle_fixtures(respond, body)
 
 
-@app.action(SHOW_MORE_ACTION)
-def action_fixtures_show_more(ack, respond, body):
-    handle_fixtures_show_more(ack, respond, body)
+@app.action(FIXTURES_PAGE_ACTION)
+def action_fixtures_page(ack, respond, body):
+    handle_fixtures_page(ack, respond, body)
 
 
 # ── Slash command: /results ───────────────────────────────────────────────────
@@ -133,9 +138,9 @@ def cmd_results(ack, respond, body):
     handle_results(respond, body)
 
 
-@app.action(SHOW_MORE_RESULTS_ACTION)
-def action_results_show_more(ack, respond, body):
-    handle_results_show_more(ack, respond, body)
+@app.action(RESULTS_PAGE_ACTION)
+def action_results_page(ack, respond, body):
+    handle_results_page(ack, respond, body)
 
 
 # ── Slash command: /scoring ───────────────────────────────────────────────────
@@ -150,6 +155,11 @@ def cmd_scoring(ack, respond, body):
 def cmd_me(ack, respond, body, client):
     ack()
     handle_me(respond, body, client)
+
+
+@app.action(MYSTATS_UPCOMING_PAGE_ACTION)
+def action_mystats_upcoming_page(ack, respond, body, client):
+    handle_mystats_upcoming_page(ack, respond, body, client)
 
 
 # ── Slash command: /help ──────────────────────────────────────────────────────

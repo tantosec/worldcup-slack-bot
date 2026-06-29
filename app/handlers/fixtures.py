@@ -8,7 +8,8 @@ from app.flags import home, away, vs
 from app.football import format_kickoff, format_score, is_kickoff_passed, stage_label, estimate_match_time
 from app.odds import format_prob_line, format_underdog_line
 
-SHOW_MORE_ACTION = "fixtures_show_more"
+FIXTURES_PAGE_ACTION = "fixtures_page"
+_PAGE_SIZE = 5
 
 
 def _section(text: str) -> dict:
@@ -68,10 +69,10 @@ def _upcoming_blocks(matches: list, user_preds: dict) -> list:
     return blocks
 
 
-def _build_fixtures_blocks(slack_user_id: str, show_all_upcoming: bool = False) -> list | None:
+def _build_fixtures_blocks(slack_user_id: str, page: int = 0) -> list | None:
     with db.db() as conn:
         live_matches = db.get_live_matches(conn)
-        upcoming = db.get_upcoming_matches(conn, limit=20)
+        upcoming = db.get_all_upcoming_matches(conn)
         user_preds = {
             p["match_id"]: p
             for p in db.get_user_predictions_with_matches(conn, slack_user_id)
@@ -84,26 +85,17 @@ def _build_fixtures_blocks(slack_user_id: str, show_all_upcoming: bool = False) 
     if not live_matches and not upcoming:
         return None
 
-    _tz = ZoneInfo(os.getenv("DISPLAY_TIMEZONE", "Australia/Sydney"))
-    today_local = datetime.now(tz=_tz).date().isoformat()
-    # Compare kickoff UTC dates converted to display timezone
-    def _kickoff_local_date(m) -> str:
-        return datetime.fromisoformat(m["kickoff_utc"].replace("Z", "+00:00")).astimezone(_tz).date().isoformat()
-
-    today_upcoming = [m for m in upcoming if _kickoff_local_date(m) == today_local]
-    later_upcoming = [m for m in upcoming if _kickoff_local_date(m) > today_local]
-
-    # If nothing is on today, surface the next day's matches so the list isn't empty
-    if not today_upcoming and later_upcoming and not show_all_upcoming:
-        next_day = _kickoff_local_date(later_upcoming[0])
-        today_upcoming = [m for m in later_upcoming if _kickoff_local_date(m) == next_day]
-        later_upcoming = [m for m in later_upcoming if _kickoff_local_date(m) > next_day]
+    total_upcoming = len(upcoming)
+    total_pages = max(1, -(-total_upcoming // _PAGE_SIZE))
+    page = max(0, min(page, total_pages - 1))
+    start = page * _PAGE_SIZE
+    page_upcoming = upcoming[start:start + _PAGE_SIZE]
 
     blocks = [
         {"type": "header", "text": {"type": "plain_text", "text": "FIFA World Cup 2026 — Fixtures", "emoji": True}},
     ]
 
-    # ── Live matches ─────────────────────────────────────────────────────────────
+    # ── Live matches (always shown in full) ───────────────────────────────────
     if live_matches:
         blocks += [_divider(), _section(":red_circle:  *LIVE NOW*"), _divider()]
 
@@ -156,42 +148,29 @@ def _build_fixtures_blocks(slack_user_id: str, show_all_upcoming: bool = False) 
             if no_pick:
                 blocks.append(_context(":ghost:  No pick: " + "  ".join(f"<@{uid}>" for uid in no_pick)))
 
-    # ── Upcoming matches ──────────────────────────────────────────────────────────
-    candidates = today_upcoming + (later_upcoming if show_all_upcoming else [])
-    remaining_after = [] if not show_all_upcoming else []
-
-    # Fit as many matches as possible within Slack's 50-block limit (keep 3 buffer)
-    MAX_BLOCKS = 47
-    upcoming_section_overhead = 3  # divider + header + divider
-    fit = []
-    spare = MAX_BLOCKS - len(blocks) - upcoming_section_overhead
-    for m in candidates:
-        cost = 1 + len([x for x in [format_prob_line(m), format_underdog_line(m, action=True)] if x])
-        if spare - cost < 1:  # keep 1 spare for the overflow note or button
-            remaining_after = candidates[candidates.index(m):]
-            break
-        fit.append(m)
-        spare -= cost
-
-    if fit or later_upcoming:
+    # ── Upcoming matches (paginated) ──────────────────────────────────────────
+    if upcoming:
         blocks += [_divider(), _section(":calendar:  *Upcoming*"), _divider()]
-        blocks += _upcoming_blocks(fit, user_preds)
+        blocks += _upcoming_blocks(page_upcoming, user_preds)
 
-        if not show_all_upcoming and later_upcoming:
-            blocks.append({
-                "type": "actions",
-                "elements": [{
-                    "type": "button",
-                    "text": {
-                        "type": "plain_text",
-                        "text": f"Show {len(later_upcoming)} more upcoming matches",
-                        "emoji": True,
-                    },
-                    "action_id": SHOW_MORE_ACTION,
-                }],
+        nav_elements = []
+        if page > 0:
+            nav_elements.append({
+                "type": "button",
+                "text": {"type": "plain_text", "text": "← Previous", "emoji": True},
+                "action_id": FIXTURES_PAGE_ACTION,
+                "value": str(page - 1),
             })
-        elif remaining_after:
-            blocks.append(_context(f"_…and {len(remaining_after)} more matches not shown — check the FIFA app for the full schedule_"))
+        if page < total_pages - 1:
+            nav_elements.append({
+                "type": "button",
+                "text": {"type": "plain_text", "text": "Next →", "emoji": True},
+                "action_id": FIXTURES_PAGE_ACTION,
+                "value": str(page + 1),
+            })
+        if nav_elements:
+            blocks.append({"type": "actions", "elements": nav_elements})
+        blocks.append(_context(f"_Page {page + 1} of {total_pages}  ·  {total_upcoming} upcoming matches_"))
 
     return blocks
 
@@ -205,10 +184,11 @@ def handle_fixtures(respond, body):
     respond(response_type="ephemeral", blocks=blocks, text="FIFA World Cup 2026 — Fixtures")
 
 
-def handle_fixtures_show_more(ack, respond, body):
+def handle_fixtures_page(ack, respond, body):
     ack()
     slack_user_id = body["user"]["id"]
-    blocks = _build_fixtures_blocks(slack_user_id, show_all_upcoming=True)
+    page = int(body["actions"][0]["value"])
+    blocks = _build_fixtures_blocks(slack_user_id, page=page)
     if blocks is None:
         respond(response_type="ephemeral", text="No fixtures found.")
         return
