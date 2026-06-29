@@ -20,9 +20,10 @@ A Slack bot for running an internal World Cup 2026 prediction league. Players pr
 - **Personal DMs** — each player gets a DM with their points and rank after every match
 - **Matchday wraps** — end-of-day summary with all results and top earners
 - **Phase wraps** — rich announcement after each round completes (group stage, R32, R16, QF, SF, Final) with full leaderboard
-- **Picks reveal** — all tournament picks posted publicly when Matchday 2 locks
+- **Picks reveal** — all tournament picks posted publicly when picks lock
 - **Leaderboard** — live standings available any time
 - **Player stats** — full prediction history and picks visible per player via `/mystats @user`
+- **Auto-picks** — LLM-generated predictions for players who forget, applied at kickoff, so nobody is missing from the board. Uses Pollinations AI by default (no account required); Groq and Google Gemini supported as drop-in replacements. Auto-picks are labelled 🤖 everywhere they appear and count for full points.
 
 ## Scoring
 
@@ -38,7 +39,7 @@ A Slack bot for running an internal World Cup 2026 prediction league. Players pr
 **How is the underdog determined?**
 Live betting odds are used — the team with the lower win probability is the underdog, but only when the gap is ≥15 percentage points (closer matches are too ambiguous to call). When odds aren't available yet, FIFA rankings are used as a fallback (gap ≥15 positions). A draw does **not** trigger the upset bonus — you need to predict the underdog wins outright.
 
-### Tournament Picks _(lock before Matchday 2, 18 Jun)_
+### Tournament Picks _(lock time configurable via `PICKS_LOCK_TIME`)_
 | Pick | Points |
 |------|--------|
 | World Cup Winner | 30 pts |
@@ -47,6 +48,15 @@ Live betting odds are used — the team with the lower win probability is the un
 | Group Stage Total Goals | 25 pts (closest) / 10 pts (within ±5) |
 | Zebra Pick — Bold tier | 10–80 pts depending on how far they go |
 | Zebra Pick — Wildcard tier | ×2 all zebra points |
+
+### Auto-picks 🤖
+Players who forget to predict a match or miss the tournament picks deadline are automatically covered by the LLM auto-pick system.
+
+- **Match predictions** — generated once per match at the ~1h kickoff reminder and cached. Applied to all missing players at kickoff so the full predictions board is always complete. Each player gets a DM explaining the pick and the reasoning.
+- **Tournament picks** — generated once at the ~1h tournament picks lock reminder. Applied to all players who haven't submitted when picks lock. Each player gets a DM with their full auto-generated picks.
+- **Fairness** — all players who missed the same match get the identical LLM-generated pick (one LLM call per match, not per player). Nobody gets a different result by accident.
+- **Display** — auto-picks are labelled 🤖 in the kickoff message, `/mystats`, and `/picks`. They count for full points.
+- **Fallback** — if the LLM fails all retries, an odds-based pick is used instead (favourite wins 1–0, or 0–0 for a draw). The 🤖 label still applies.
 
 ## Commands
 
@@ -108,6 +118,14 @@ DISPLAY_TIMEZONE=Australia/Sydney     # timezone for kickoff times
 LIVE_POLL_INTERVAL=10                 # seconds between live score syncs (default: 10)
 POLL_INTERVAL=60                      # seconds between other job cycles (default: 60)
 ORG_NAME=TantoSec                     # organisation name shown in messages
+
+# Auto-pick — optional, defaults shown
+AUTO_PICK_ENABLED=true                # set to false to disable entirely
+LLM_PROVIDER=pollinations             # pollinations (default) | groq | google
+# GROQ_API_KEY=                       # required if LLM_PROVIDER=groq
+# GOOGLE_AI_API_KEY=                  # required if LLM_PROVIDER=google
+# PICKS_LOCK_TIME=2026-06-18T18:00:00 # override picks lock time (UTC ISO 8601)
+                                      # omit to lock at first match kickoff
 ```
 
 ### 5. Invite the bot to the channel
@@ -134,10 +152,18 @@ app/
 ├── football.py          # Score and time formatting utilities
 ├── odds.py              # The Odds API client, win probability calculation, underdog detection
 ├── scoring.py           # Points calculation logic
+├── autopick.py          # LLM auto-pick logic — generates, caches, and applies picks
 ├── players.py           # Player search for golden boot autocomplete
 ├── players.json         # 1,249 WC 2026 squad players
 ├── flags.py             # Country flag emoji map
 ├── fifa_rankings.py     # Official June 2026 FIFA rankings (underdog fallback)
+├── llm/
+│   ├── __init__.py      # get_provider() factory + startup validation
+│   ├── base.py          # LLMProvider protocol
+│   ├── pollinations.py  # Pollinations AI (default, no key required)
+│   ├── groq.py          # Groq stub (set LLM_PROVIDER=groq + GROQ_API_KEY)
+│   ├── google.py        # Google Gemini stub (set LLM_PROVIDER=google + GOOGLE_AI_API_KEY)
+│   └── fallback.py      # Odds-based fallback when all LLM attempts fail
 └── handlers/
     ├── predict.py       # /predict — dynamic date picker modal
     ├── picks.py         # /picks — tournament picks modal
@@ -160,3 +186,7 @@ app/
 - Knockout matches with TBD teams are skipped during sync and added automatically once teams are confirmed
 - Times displayed in `DISPLAY_TIMEZONE` (default: `Australia/Sydney`)
 - DB schema changes are applied directly via `ALTER TABLE` on the production database — no migration logic in code
+- Auto-pick LLM calls happen at the ~1h kickoff reminder (not at kickoff) — by the time the match starts the result is cached, so kickoff messages are never delayed
+- With `LLM_PROVIDER=pollinations` (default) no API key is needed — the provider allows 1 queued request per IP with ~5–20s response time, which is well within the 1-hour window
+- Switching LLM providers requires only changing `LLM_PROVIDER` and adding the corresponding key — no code changes needed
+- Set `PICKS_LOCK_TIME` when deploying mid-tournament; leave it unset for a clean deploy before the competition starts

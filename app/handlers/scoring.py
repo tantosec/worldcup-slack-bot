@@ -108,9 +108,23 @@ SCORING_BLOCKS = [
             "type": "mrkdwn",
             "text": (
                 ":lock: *Match predictions can be updated any time before kickoff — they lock when the match starts.* "
-                "Tournament picks can be updated until Matchday 2 begins on *18 Jun*."
+                "Tournament picks can be updated until picks lock."
             ),
         }],
+    },
+    {"type": "divider"},
+    {
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": (
+                ":robot_face: *Auto-picks*\n"
+                "Forgot to predict? No worries — the bot will generate a pick for you using AI, "
+                "applied at kickoff so you always appear on the board.\n"
+                "Auto-picks are labelled :robot_face: and count for full points. "
+                "You'll get a DM explaining what was picked and why."
+            ),
+        },
     },
 ]
 
