@@ -2,7 +2,7 @@ import json
 import logging
 import time
 
-import httpx
+import requests
 
 from app.football import stage_label
 
@@ -15,7 +15,7 @@ _MAX_RETRIES = 5
 
 
 def _call(prompt: str, attempt: int = 1) -> dict:
-    r = httpx.post(
+    r = requests.post(
         _URL,
         json={
             "messages": [{"role": "user", "content": prompt}],
