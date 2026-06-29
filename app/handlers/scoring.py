@@ -120,11 +120,13 @@ SCORING_BLOCKS = [
             "type": "mrkdwn",
             "text": (
                 ":robot_face: *Auto-picks*\n"
-                "Forgot to predict? No worries — the bot will generate a pick for you using AI, "
-                "applied at kickoff so you always appear on the board.\n"
-                f"Auto-picks are labelled :robot_face: and earn *{_AUTO_PICK_PCT}% of the points* a correct prediction would score. "
-                "You'll get a DM explaining what was picked and why.\n"
-                "_Tournament picks auto-filled by the bot count for full points._"
+                "Forgot to predict? The bot has you covered — it generates picks using AI so you always appear on the board.\n\n"
+                ":robot_face: *Match predictions* — applied at kickoff for any match you missed. "
+                f"Earns *{_AUTO_PICK_PCT}% of the points* a correct prediction would score. "
+                "You'll get a DM with the pick and the reasoning.\n\n"
+                ":robot_face: *Tournament picks* — auto-generated if you miss the deadline. "
+                "Count for *full points* — no penalty. "
+                "You'll get a DM with your full auto-generated picks."
             ),
         },
     },
