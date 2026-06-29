@@ -227,7 +227,6 @@ def handle_me(respond, body, client):
 
 
 def handle_mystats_upcoming_page(ack, respond, body, client):
-    logger.info("mystats_upcoming_page action: value=%s user=%s", body["actions"][0]["value"], body["user"]["id"])
     ack()
     caller_id = body["user"]["id"]
     with db.db() as conn:

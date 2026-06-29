@@ -80,15 +80,6 @@ def action_picks_page(ack, body, respond):
     handle_picks_page_action(ack, body, respond)
 
 
-# ── Debug: catch-all action logger ────────────────────────────────────────────
-import re as _re
-@app.action(_re.compile(".+"))
-def catch_all_action(ack, body):
-    action_id = (body.get("actions") or [{}])[0].get("action_id", "unknown")
-    logger.warning("UNHANDLED ACTION received: action_id=%r user=%s", action_id, body.get("user", {}).get("id"))
-    ack()
-
-
 # ── External select: golden boot player search ────────────────────────────────
 @app.options(SCORER_ACTION)
 def options_scorer(ack, payload):
