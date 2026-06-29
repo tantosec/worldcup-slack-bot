@@ -228,7 +228,8 @@ def handle_me(respond, body, client):
 
 def handle_mystats_upcoming_page(ack, respond, body, client):
     ack()
-    logger.info("mystats_upcoming_page called, value=%r", body["actions"][0]["value"])
+    logger.info("mystats_upcoming_page called, value=%r, response_url=%r",
+                body["actions"][0]["value"], body.get("response_url", "MISSING"))
     caller_id = body["user"]["id"]
     with db.db() as conn:
         if not db.is_enrolled(conn, caller_id):
@@ -238,7 +239,11 @@ def handle_mystats_upcoming_page(ack, respond, body, client):
     target_id, page_str = value.rsplit(":", 1)
     page = int(page_str)
     blocks, title = _build_me_blocks(target_id, caller_id, client, upcoming_page=page)
-    respond(replace_original=True, blocks=blocks, text=title)
+    try:
+        result = respond(replace_original=True, blocks=blocks, text=title)
+        logger.info("respond result: %s", result)
+    except Exception as exc:
+        logger.exception("respond failed: %s", exc)
 
 
 def _picks_text(picks, locked: bool) -> str:
