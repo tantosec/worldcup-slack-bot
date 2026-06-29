@@ -472,14 +472,17 @@ def send_goal_notifications(slack_client):
                 if pts > 0:
                     exact = p["home_score"] == curr_home and p["away_score"] == curr_away
                     icon = ":dart:" if exact else ":white_check_mark:"
-                    scorers.append((icon, p["slack_user_id"], p["home_score"], p["away_score"], pts))
+                    scorers.append((icon, p["slack_user_id"], p["home_score"], p["away_score"], pts, p["is_auto"]))
 
             if scorers:
                 blocks.append(_block_divider())
                 blocks.append(_block_section("🔮  *Scoring right now*"))
                 scorer_pairs = [
-                    (f"{icon}  <@{uid}>  `{ph} - {pa}`", f"*+{points_label(pts)}*")
-                    for icon, uid, ph, pa, pts in sorted(scorers, key=lambda x: -x[4])
+                    (
+                        f"{icon}  <@{uid}>{'  :robot_face:' if is_auto else ''}  `{ph} - {pa}`",
+                        f"*+{points_label(pts)}*",
+                    )
+                    for icon, uid, ph, pa, pts, is_auto in sorted(scorers, key=lambda x: -x[4])
                 ]
                 blocks.extend(_block_fields(scorer_pairs))
 
@@ -578,17 +581,17 @@ def send_halftime_notifications(slack_client):
             if pts > 0:
                 exact = p["home_score"] == curr_home and p["away_score"] == curr_away
                 icon = ":dart:" if exact else ":white_check_mark:"
-                scorers.append((icon, p["slack_user_id"], p["home_score"], p["away_score"], pts))
+                scorers.append((icon, p["slack_user_id"], p["home_score"], p["away_score"], pts, p["is_auto"]))
 
         if scorers:
             blocks.append(_block_divider())
             blocks.append(_block_section("🔮  *Scoring at half time*"))
             scorer_pairs = [
                 (
-                    f"{icon}  <@{uid}>  `{ph} - {pa}`",
+                    f"{icon}  <@{uid}>{'  :robot_face:' if is_auto else ''}  `{ph} - {pa}`",
                     f"*+{points_label(pts)}*",
                 )
-                for icon, uid, ph, pa, pts in sorted(scorers, key=lambda x: -x[4])
+                for icon, uid, ph, pa, pts, is_auto in sorted(scorers, key=lambda x: -x[4])
             ]
             blocks.extend(_block_fields(scorer_pairs))
 
