@@ -228,6 +228,7 @@ def handle_me(respond, body, client):
 
 def handle_mystats_upcoming_page(ack, respond, body, client):
     ack()
+    logger.info("mystats_upcoming_page called, value=%r", body["actions"][0]["value"])
     caller_id = body["user"]["id"]
     with db.db() as conn:
         if not db.is_enrolled(conn, caller_id):

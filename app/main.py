@@ -42,6 +42,13 @@ _validate_env()
 
 app = App(token=os.environ["SLACK_BOT_TOKEN"])
 
+
+@app.error
+def global_error_handler(error, body, logger):
+    logger.exception("Unhandled error in handler: %s | body action_id=%s", error,
+                     (body.get("actions") or [{}])[0].get("action_id", "n/a"))
+
+
 _HELP_TEXT = (
     "*:soccer: World Cup 2026 Bot — commands*\n\n"
     "  `/register`     — join the prediction league\n"
