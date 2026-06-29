@@ -240,11 +240,8 @@ def handle_mystats_upcoming_page(ack, respond, body, client):
     page = int(page_str)
     blocks, title = _build_me_blocks(target_id, caller_id, client, upcoming_page=page)
     import json as _json
-    logger.info("block count=%d types=%s", len(blocks), [b.get("type") for b in blocks])
-    try:
-        _json.dumps(blocks)
-    except Exception as exc:
-        logger.error("blocks not JSON-serializable: %s", exc)
+    logger.info("block count=%d", len(blocks))
+    logger.info("BLOCKS JSON: %s", _json.dumps(blocks))
     try:
         result = respond(replace_original=True, blocks=blocks, text=title)
         logger.info("respond status=%s body=%r", result.status_code, result.body)
