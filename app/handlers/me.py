@@ -239,12 +239,11 @@ def handle_mystats_upcoming_page(ack, respond, body, client):
     target_id, page_str = value.rsplit(":", 1)
     page = int(page_str)
     blocks, title = _build_me_blocks(target_id, caller_id, client, upcoming_page=page)
-    import json as _json
     logger.info("block count=%d", len(blocks))
-    logger.info("BLOCKS JSON: %s", _json.dumps(blocks))
     try:
-        result = respond(replace_original=True, blocks=blocks, text=title)
-        logger.info("respond status=%s body=%r", result.status_code, result.body)
+        # Test: plain text only, no blocks
+        result = respond(replace_original=True, text="[PAGINATION TEST] page updated ok")
+        logger.info("text-only respond status=%s body=%r", result.status_code, result.body)
     except Exception as exc:
         logger.exception("respond failed: %s", exc)
 
