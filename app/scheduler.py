@@ -38,6 +38,10 @@ def _block_context(text: str) -> dict:
     return {"type": "context", "elements": [{"type": "mrkdwn", "text": text}]}
 
 
+def _block_actions(elements: list) -> dict:
+    return {"type": "actions", "elements": elements}
+
+
 def _block_divider() -> dict:
     return {"type": "divider"}
 
@@ -272,7 +276,15 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None, c
                 f"{icon}  <@{user_id}>  `{pred_str}`  {auto_tag}{label}",
                 f"*{points_label(pts)}*",
             ))
-        blocks.extend(_block_fields(pred_pairs))
+        blocks.extend(_block_fields(pred_pairs[:10]))
+        if len(pred_pairs) > 10:
+            blocks.append(_block_context(f"_...and {len(pred_pairs) - 10} more predictions_"))
+        blocks.append(_block_actions([{
+            "type": "button",
+            "text": {"type": "plain_text", "text": f"See all {len(pred_pairs)} predictions →", "emoji": True},
+            "action_id": "open_result_picks_modal",
+            "value": str(match["id"]),
+        }]))
     else:
         blocks.append(_block_section("_(no predictions were made for this match)_"))
 
@@ -477,14 +489,23 @@ def send_goal_notifications(slack_client):
             if scorers:
                 blocks.append(_block_divider())
                 blocks.append(_block_section("🔮  *Scoring right now*"))
+                sorted_scorers = sorted(scorers, key=lambda x: -x[4])
                 scorer_pairs = [
                     (
                         f"{icon}  <@{uid}>  `{ph} - {pa}`{'  :robot_face:' if is_auto else ''}",
                         f"*+{points_label(pts)}*",
                     )
-                    for icon, uid, ph, pa, pts, is_auto in sorted(scorers, key=lambda x: -x[4])
+                    for icon, uid, ph, pa, pts, is_auto in sorted_scorers[:10]
                 ]
                 blocks.extend(_block_fields(scorer_pairs))
+                if len(sorted_scorers) > 10:
+                    blocks.append(_block_context(f"_...and {len(sorted_scorers) - 10} more scoring_"))
+                blocks.append(_block_actions([{
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "See all picks →", "emoji": True},
+                    "action_id": "open_live_picks_modal",
+                    "value": str(match["id"]),
+                }]))
 
             try:
                 _post_attachment(
@@ -586,14 +607,23 @@ def send_halftime_notifications(slack_client):
         if scorers:
             blocks.append(_block_divider())
             blocks.append(_block_section("🔮  *Scoring at half time*"))
+            sorted_scorers = sorted(scorers, key=lambda x: -x[4])
             scorer_pairs = [
                 (
                     f"{icon}  <@{uid}>  `{ph} - {pa}`{'  :robot_face:' if is_auto else ''}",
                     f"*+{points_label(pts)}*",
                 )
-                for icon, uid, ph, pa, pts, is_auto in sorted(scorers, key=lambda x: -x[4])
+                for icon, uid, ph, pa, pts, is_auto in sorted_scorers[:10]
             ]
             blocks.extend(_block_fields(scorer_pairs))
+            if len(sorted_scorers) > 10:
+                blocks.append(_block_context(f"_...and {len(sorted_scorers) - 10} more scoring_"))
+            blocks.append(_block_actions([{
+                "type": "button",
+                "text": {"type": "plain_text", "text": "See all picks →", "emoji": True},
+                "action_id": "open_live_picks_modal",
+                "value": str(match["id"]),
+            }]))
 
         try:
             _post_attachment(
@@ -833,7 +863,9 @@ def send_kickoff_announcements(slack_client):
         ]
 
         if pred_pairs:
-            blocks.extend(_block_fields(pred_pairs))
+            blocks.extend(_block_fields(pred_pairs[:10]))
+            if len(pred_pairs) > 10:
+                blocks.append(_block_context(f"_...and {len(pred_pairs) - 10} more_"))
         else:
             blocks.append(_block_section("_(no predictions made)_"))
 
@@ -842,6 +874,14 @@ def send_kickoff_announcements(slack_client):
             blocks.append(_block_context(
                 ":x: No pick: " + "  ".join(f"<@{u}>" for u in no_pred)
             ))
+
+        if pred_pairs:
+            blocks.append(_block_actions([{
+                "type": "button",
+                "text": {"type": "plain_text", "text": f"See all {len(pred_pairs)} picks →", "emoji": True},
+                "action_id": "open_live_picks_modal",
+                "value": str(match["id"]),
+            }]))
 
         try:
             _post_attachment(
@@ -1059,12 +1099,14 @@ def post_picks_reveal(slack_client, force: bool = False):
             return
         db.mark_picks_reveal_sent(conn)
 
+    _REVEAL_INLINE_CAP = 5
+
     blocks = [
         _block_section("🔒  *Tournament picks are locked!*\nHere's what everyone chose:"),
         _block_divider(),
     ]
 
-    for p in picks:
+    for p in picks[:_REVEAL_INLINE_CAP]:
         header = f"*<@{p['slack_user_id']}>*" + (" :robot_face:" if p["is_auto"] else "")
         pick_lines = [header]
 
@@ -1085,6 +1127,16 @@ def post_picks_reveal(slack_client, force: bool = False):
             pick_lines.append(f":zebra_face: Zebra: *{flag(p['zebra'])} {p['zebra']}* ({tier})")
 
         blocks.append(_block_section("\n".join(pick_lines)))
+
+    if len(picks) > _REVEAL_INLINE_CAP:
+        blocks.append(_block_context(f"_...and {len(picks) - _REVEAL_INLINE_CAP} more players_"))
+
+    blocks.append(_block_actions([{
+        "type": "button",
+        "text": {"type": "plain_text", "text": f"See all {len(picks)} picks →", "emoji": True},
+        "action_id": "open_picks_modal_view",
+        "value": "reveal",
+    }]))
 
     try:
         _post_attachment(

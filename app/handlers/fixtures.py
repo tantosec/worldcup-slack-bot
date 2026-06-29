@@ -5,12 +5,16 @@ from app.espn import fetch_match_summary, get_goal_scorers, get_match_stats, get
 from app.flags import home, away, vs
 from app.football import format_kickoff, format_score, stage_label, estimate_match_time
 from app.odds import format_prob_line, format_underdog_line
+from app.scoring import calculate_points, points_label
 
 OPEN_FIXTURES_MODAL_ACTION = "open_fixtures_modal"
 FIXTURES_MODAL_PREV_ACTION = "fixtures_modal_prev"
 FIXTURES_MODAL_NEXT_ACTION = "fixtures_modal_next"
+LIVE_PICKS_MODAL_ACTION = "open_live_picks_modal"
+RESULT_PICKS_MODAL_ACTION = "open_result_picks_modal"
 _EPHEMERAL_PREVIEW = 3
 _MODAL_PAGE_SIZE = 5
+_LIVE_SCORERS_CAP = 10
 
 
 def _section(text: str) -> dict:
@@ -45,6 +49,58 @@ def _enrich_live(match: dict) -> tuple:
         return scorers, stats, display_clock
     except Exception:
         return [], None, None
+
+
+def _live_picks_split(match, preds: list) -> tuple:
+    """Split preds into (scoring_now, other_preds, no_pick_uids) vs current score.
+
+    scoring_now — sorted by pts desc, entries: (uid, h, a, is_auto, pts)
+    other_preds — entries: (uid, h, a, is_auto, 0)
+    no_pick_uids — list of slack_user_id strings
+    """
+    curr_home = match["home_score"] or 0
+    curr_away = match["away_score"] or 0
+    scoring_now, other_preds, no_pick_uids = [], [], []
+    for r in preds:
+        if r["home_score"] is None:
+            no_pick_uids.append(r["slack_user_id"])
+        else:
+            pts = calculate_points(
+                r["home_score"], r["away_score"],
+                curr_home, curr_away,
+                match["home_team"], match["away_team"],
+                match["stage"],
+                match=dict(match),
+            )
+            entry = (r["slack_user_id"], r["home_score"], r["away_score"], r["is_auto"], pts)
+            if pts > 0:
+                scoring_now.append(entry)
+            else:
+                other_preds.append(entry)
+    scoring_now.sort(key=lambda x: -x[4])
+    return scoring_now, other_preds, no_pick_uids
+
+
+def _pred_pairs(entries: list) -> list:
+    """Convert (uid, h, a, is_auto, pts) entries to (left, right) Slack field pairs."""
+    pairs = []
+    for uid, h, a, is_auto, *_ in entries:
+        score_str = f"`{h} - {a}`" + (" :robot_face:" if is_auto else "")
+        pairs.append((f"<@{uid}>", score_str))
+    return pairs
+
+
+def _pairs_to_fields_blocks(pairs: list) -> list:
+    """Chunk (left, right) pairs into section field blocks (5 pairs / 10 fields each)."""
+    blocks = []
+    for i in range(0, len(pairs), 5):
+        chunk = pairs[i:i + 5]
+        fields = []
+        for left, right in chunk:
+            fields.append({"type": "mrkdwn", "text": left})
+            fields.append({"type": "mrkdwn", "text": right})
+        blocks.append({"type": "section", "fields": fields})
+    return blocks
 
 
 def _upcoming_blocks(matches: list, user_preds: dict) -> list:
@@ -129,21 +185,22 @@ def _build_fixtures_blocks(slack_user_id: str) -> list | None:
                 blocks.append(_context(part))
 
             preds = live_preds.get(m["id"], [])
-            predicted = [
-                (r["slack_user_id"], r["home_score"], r["away_score"], r["is_auto"])
-                for r in preds if r["home_score"] is not None
-            ]
-            no_pick = [r["slack_user_id"] for r in preds if r["home_score"] is None]
+            scoring_now, other_preds, no_pick_uids = _live_picks_split(m, preds)
+            total_picks = len(scoring_now) + len(other_preds)
 
-            if predicted:
-                fields = []
-                for uid, h, a, is_auto in predicted:
-                    fields.append({"type": "mrkdwn", "text": f"<@{uid}>"})
-                    score_label = f"`{h} - {a}` :robot_face:" if is_auto else f"`{h} - {a}`"
-                    fields.append({"type": "mrkdwn", "text": score_label})
-                blocks.append({"type": "section", "fields": fields[:10]})
-            if no_pick:
-                blocks.append(_context(":ghost:  No pick: " + "  ".join(f"<@{uid}>" for uid in no_pick)))
+            if scoring_now:
+                blocks.append(_section("🔮  *Scoring right now*"))
+                blocks += _pairs_to_fields_blocks(_pred_pairs(scoring_now[:_LIVE_SCORERS_CAP]))
+                if len(scoring_now) > _LIVE_SCORERS_CAP:
+                    blocks.append(_context(f"_...and {len(scoring_now) - _LIVE_SCORERS_CAP} more scoring_"))
+
+            if total_picks > 0 or no_pick_uids:
+                blocks.append({"type": "actions", "elements": [{
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": f"See all {total_picks} picks →", "emoji": True},
+                    "action_id": LIVE_PICKS_MODAL_ACTION,
+                    "value": str(m["id"]),
+                }]})
 
     if upcoming:
         blocks += [_divider(), _section(":calendar:  *Upcoming*"), _divider()]
@@ -201,6 +258,109 @@ def _build_fixtures_modal_view(slack_user_id: str, page: int = 0) -> dict:
         "private_metadata": json.dumps({"user_id": slack_user_id}),
         "blocks": blocks,
     }
+
+
+def _build_live_picks_modal_view(match_id: int) -> dict:
+    with db.db() as conn:
+        match = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
+        preds = db.get_match_predictions_all_users(conn, match_id)
+
+    scoring_now, other_preds, no_pick_uids = _live_picks_split(match, preds)
+    curr_home = match["home_score"] or 0
+    curr_away = match["away_score"] or 0
+    score_line = f"{home(match['home_team'])} {curr_home}–{curr_away} {away(match['away_team'])}"
+
+    blocks = []
+
+    if scoring_now:
+        blocks.append(_section(f"🔮  *Scoring right now*  ·  {score_line}"))
+        blocks += _pairs_to_fields_blocks(_pred_pairs(scoring_now))
+
+    if other_preds:
+        if scoring_now:
+            blocks.append(_divider())
+        blocks.append(_section("📋  *Other predictions*"))
+        blocks += _pairs_to_fields_blocks(_pred_pairs(other_preds))
+
+    if no_pick_uids:
+        blocks.append(_divider())
+        blocks.append(_context(":ghost:  No pick: " + "  ".join(f"<@{uid}>" for uid in no_pick_uids)))
+
+    if not blocks:
+        blocks.append(_section("_No predictions submitted yet._"))
+
+    return {
+        "type": "modal",
+        "title": {"type": "plain_text", "text": "Live Picks", "emoji": True},
+        "close": {"type": "plain_text", "text": "Close"},
+        "blocks": blocks,
+    }
+
+
+def handle_open_live_picks_modal(ack, body, client):
+    ack()
+    match_id = int(body["actions"][0]["value"])
+    view = _build_live_picks_modal_view(match_id)
+    client.views_open(trigger_id=body["trigger_id"], view=view)
+
+
+def _build_result_picks_modal_view(match_id: int) -> dict:
+    with db.db() as conn:
+        match = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
+        preds = conn.execute(
+            "SELECT * FROM predictions WHERE match_id = ? AND points IS NOT NULL ORDER BY points DESC",
+            (match_id,),
+        ).fetchall()
+
+    act_h = match["home_score_90"] if match["home_score_90"] is not None else match["home_score"]
+    act_a = match["away_score_90"] if match["away_score_90"] is not None else match["away_score"]
+    score_line = f"{home(match['home_team'])} {match['home_score']}–{match['away_score']} {away(match['away_team'])}"
+
+    scored, no_pts = [], []
+    for p in preds:
+        entry = (p["slack_user_id"], p["home_score"], p["away_score"], p["is_auto"], p["points"])
+        if p["points"] > 0:
+            scored.append(entry)
+        else:
+            no_pts.append(entry)
+
+    blocks = []
+
+    if scored:
+        blocks.append(_section(f"✅  *Scored points*  ·  {score_line}"))
+        pairs = []
+        for uid, h, a, is_auto, pts in scored:
+            icon = ":dart:" if (h == act_h and a == act_a) else ":white_check_mark:"
+            score_str = f"{icon} `{h} - {a}`" + (" :robot_face:" if is_auto else "") + f"  _{points_label(pts)}_"
+            pairs.append((f"<@{uid}>", score_str))
+        blocks += _pairs_to_fields_blocks(pairs)
+
+    if no_pts:
+        if scored:
+            blocks.append(_divider())
+        blocks.append(_section("❌  *No points*"))
+        pairs = [
+            (f"<@{uid}>", f"`{h} - {a}`" + (" :robot_face:" if is_auto else ""))
+            for uid, h, a, is_auto, pts in no_pts
+        ]
+        blocks += _pairs_to_fields_blocks(pairs)
+
+    if not blocks:
+        blocks.append(_section("_No predictions were made for this match._"))
+
+    return {
+        "type": "modal",
+        "title": {"type": "plain_text", "text": "Match Predictions", "emoji": True},
+        "close": {"type": "plain_text", "text": "Close"},
+        "blocks": blocks,
+    }
+
+
+def handle_open_result_picks_modal(ack, body, client):
+    ack()
+    match_id = int(body["actions"][0]["value"])
+    view = _build_result_picks_modal_view(match_id)
+    client.views_open(trigger_id=body["trigger_id"], view=view)
 
 
 def handle_fixtures(respond, body):

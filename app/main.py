@@ -24,7 +24,9 @@ from app.players import search as search_players
 from app.handlers.leaderboard import handle_leaderboard
 from app.handlers.fixtures import (
     handle_fixtures, handle_open_fixtures_modal, handle_fixtures_modal_nav,
+    handle_open_live_picks_modal, handle_open_result_picks_modal,
     OPEN_FIXTURES_MODAL_ACTION, FIXTURES_MODAL_PREV_ACTION, FIXTURES_MODAL_NEXT_ACTION,
+    LIVE_PICKS_MODAL_ACTION, RESULT_PICKS_MODAL_ACTION,
 )
 from app.handlers.results import (
     handle_results, handle_open_results_modal, handle_results_modal_nav,
@@ -176,6 +178,16 @@ def action_open_fixtures_modal(ack, body, client):
 @app.action(FIXTURES_MODAL_PREV_ACTION)
 def action_fixtures_modal_prev(ack, body, client):
     handle_fixtures_modal_nav(ack, body, client)
+
+
+@app.action(LIVE_PICKS_MODAL_ACTION)
+def action_open_live_picks_modal(ack, body, client):
+    handle_open_live_picks_modal(ack, body, client)
+
+
+@app.action(RESULT_PICKS_MODAL_ACTION)
+def action_open_result_picks_modal(ack, body, client):
+    handle_open_result_picks_modal(ack, body, client)
 
 
 @app.action(FIXTURES_MODAL_NEXT_ACTION)
