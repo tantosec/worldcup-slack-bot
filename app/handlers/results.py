@@ -8,7 +8,8 @@ from app.odds import format_prob_line, format_underdog_line
 from app.scoring import points_label
 
 OPEN_RESULTS_MODAL_ACTION = "open_results_modal"
-RESULTS_MODAL_NAV_ACTION = "results_modal_nav"
+RESULTS_MODAL_PREV_ACTION = "results_modal_prev"
+RESULTS_MODAL_NEXT_ACTION = "results_modal_next"
 _EPHEMERAL_PREVIEW = 3
 _MODAL_PAGE_SIZE = 4
 
@@ -122,14 +123,14 @@ def _build_results_modal_view(slack_user_id: str, page: int = 0) -> dict:
         nav_elements.append({
             "type": "button",
             "text": {"type": "plain_text", "text": "← Newer", "emoji": True},
-            "action_id": RESULTS_MODAL_NAV_ACTION,
+            "action_id": RESULTS_MODAL_PREV_ACTION,
             "value": str(page - 1),
         })
     if page < total_pages - 1:
         nav_elements.append({
             "type": "button",
             "text": {"type": "plain_text", "text": "Older →", "emoji": True},
-            "action_id": RESULTS_MODAL_NAV_ACTION,
+            "action_id": RESULTS_MODAL_NEXT_ACTION,
             "value": str(page + 1),
         })
     if nav_elements:

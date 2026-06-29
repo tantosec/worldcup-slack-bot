@@ -18,22 +18,22 @@ from app.handlers.picks import (
     open_picks_modal, handle_picks_submit,
     handle_open_picks_modal_action, handle_picks_modal_nav,
     CALLBACK_ID as PICKS_CALLBACK_ID, SCORER_ACTION,
-    OPEN_PICKS_MODAL_ACTION, PICKS_MODAL_NAV_ACTION,
+    OPEN_PICKS_MODAL_ACTION, PICKS_MODAL_PREV_ACTION, PICKS_MODAL_NEXT_ACTION,
 )
 from app.players import search as search_players
 from app.handlers.leaderboard import handle_leaderboard
 from app.handlers.fixtures import (
     handle_fixtures, handle_open_fixtures_modal, handle_fixtures_modal_nav,
-    OPEN_FIXTURES_MODAL_ACTION, FIXTURES_MODAL_NAV_ACTION,
+    OPEN_FIXTURES_MODAL_ACTION, FIXTURES_MODAL_PREV_ACTION, FIXTURES_MODAL_NEXT_ACTION,
 )
 from app.handlers.results import (
     handle_results, handle_open_results_modal, handle_results_modal_nav,
-    OPEN_RESULTS_MODAL_ACTION, RESULTS_MODAL_NAV_ACTION,
+    OPEN_RESULTS_MODAL_ACTION, RESULTS_MODAL_PREV_ACTION, RESULTS_MODAL_NEXT_ACTION,
 )
 from app.handlers.scoring import handle_scoring
 from app.handlers.me import (
     handle_me, handle_open_mystats_modal, handle_mystats_modal_nav,
-    OPEN_MYSTATS_MODAL_ACTION, MYSTATS_MODAL_NAV_ACTION,
+    OPEN_MYSTATS_MODAL_ACTION, MYSTATS_MODAL_PREV_ACTION, MYSTATS_MODAL_NEXT_ACTION,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -101,8 +101,13 @@ def action_open_picks_modal(ack, body, client):
     handle_open_picks_modal_action(ack, body, client)
 
 
-@app.action(PICKS_MODAL_NAV_ACTION)
-def action_picks_modal_nav(ack, body, client):
+@app.action(PICKS_MODAL_PREV_ACTION)
+def action_picks_modal_prev(ack, body, client):
+    handle_picks_modal_nav(ack, body, client)
+
+
+@app.action(PICKS_MODAL_NEXT_ACTION)
+def action_picks_modal_next(ack, body, client):
     handle_picks_modal_nav(ack, body, client)
 
 
@@ -157,8 +162,13 @@ def action_open_fixtures_modal(ack, body, client):
     handle_open_fixtures_modal(ack, body, client)
 
 
-@app.action(FIXTURES_MODAL_NAV_ACTION)
-def action_fixtures_modal_nav(ack, body, client):
+@app.action(FIXTURES_MODAL_PREV_ACTION)
+def action_fixtures_modal_prev(ack, body, client):
+    handle_fixtures_modal_nav(ack, body, client)
+
+
+@app.action(FIXTURES_MODAL_NEXT_ACTION)
+def action_fixtures_modal_next(ack, body, client):
     handle_fixtures_modal_nav(ack, body, client)
 
 
@@ -174,8 +184,13 @@ def action_open_results_modal(ack, body, client):
     handle_open_results_modal(ack, body, client)
 
 
-@app.action(RESULTS_MODAL_NAV_ACTION)
-def action_results_modal_nav(ack, body, client):
+@app.action(RESULTS_MODAL_PREV_ACTION)
+def action_results_modal_prev(ack, body, client):
+    handle_results_modal_nav(ack, body, client)
+
+
+@app.action(RESULTS_MODAL_NEXT_ACTION)
+def action_results_modal_next(ack, body, client):
     handle_results_modal_nav(ack, body, client)
 
 
@@ -198,8 +213,13 @@ def action_open_mystats_modal(ack, body, client):
     handle_open_mystats_modal(ack, body, client)
 
 
-@app.action(MYSTATS_MODAL_NAV_ACTION)
-def action_mystats_modal_nav(ack, body, client):
+@app.action(MYSTATS_MODAL_PREV_ACTION)
+def action_mystats_modal_prev(ack, body, client):
+    handle_mystats_modal_nav(ack, body, client)
+
+
+@app.action(MYSTATS_MODAL_NEXT_ACTION)
+def action_mystats_modal_next(ack, body, client):
     handle_mystats_modal_nav(ack, body, client)
 
 

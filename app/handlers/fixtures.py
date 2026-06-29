@@ -7,7 +7,8 @@ from app.football import format_kickoff, format_score, stage_label, estimate_mat
 from app.odds import format_prob_line, format_underdog_line
 
 OPEN_FIXTURES_MODAL_ACTION = "open_fixtures_modal"
-FIXTURES_MODAL_NAV_ACTION = "fixtures_modal_nav"
+FIXTURES_MODAL_PREV_ACTION = "fixtures_modal_prev"
+FIXTURES_MODAL_NEXT_ACTION = "fixtures_modal_next"
 _EPHEMERAL_PREVIEW = 3
 _MODAL_PAGE_SIZE = 5
 
@@ -174,14 +175,14 @@ def _build_fixtures_modal_view(slack_user_id: str, page: int = 0) -> dict:
         nav_elements.append({
             "type": "button",
             "text": {"type": "plain_text", "text": "← Previous", "emoji": True},
-            "action_id": FIXTURES_MODAL_NAV_ACTION,
+            "action_id": FIXTURES_MODAL_PREV_ACTION,
             "value": str(page - 1),
         })
     if page < total_pages - 1:
         nav_elements.append({
             "type": "button",
             "text": {"type": "plain_text", "text": "Next →", "emoji": True},
-            "action_id": FIXTURES_MODAL_NAV_ACTION,
+            "action_id": FIXTURES_MODAL_NEXT_ACTION,
             "value": str(page + 1),
         })
     if nav_elements:

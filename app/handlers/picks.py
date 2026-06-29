@@ -13,7 +13,8 @@ import json
 CALLBACK_ID = "submit_tournament_picks"
 WINNER_ACTION = "pick_winner"
 OPEN_PICKS_MODAL_ACTION = "open_picks_modal_view"
-PICKS_MODAL_NAV_ACTION = "picks_modal_nav"
+PICKS_MODAL_PREV_ACTION = "picks_modal_prev"
+PICKS_MODAL_NEXT_ACTION = "picks_modal_next"
 PICKS_MODAL_PAGE_SIZE = 10
 _EPHEMERAL_PREVIEW = 3
 SCORER_ACTION = "pick_scorer"
@@ -390,14 +391,14 @@ def _build_picks_modal_view(all_picks: list, caller_id: str, page: int = 0) -> d
         nav_elements.append({
             "type": "button",
             "text": {"type": "plain_text", "text": "← Previous", "emoji": True},
-            "action_id": PICKS_MODAL_NAV_ACTION,
+            "action_id": PICKS_MODAL_PREV_ACTION,
             "value": str(page - 1),
         })
     if page < total_pages - 1:
         nav_elements.append({
             "type": "button",
             "text": {"type": "plain_text", "text": "Next →", "emoji": True},
-            "action_id": PICKS_MODAL_NAV_ACTION,
+            "action_id": PICKS_MODAL_NEXT_ACTION,
             "value": str(page + 1),
         })
     if nav_elements:
