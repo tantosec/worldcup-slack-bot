@@ -165,7 +165,7 @@ def _auto_pick_pct() -> int:
 def _notify_match_auto_picks(slack_client, match, auto_pick, user_ids: list[str]):
     reasoning_line = (
         f"\n> _{auto_pick['reasoning']}_"
-        if auto_pick.get("reasoning") else ""
+        if auto_pick["reasoning"] else ""
     )
     pct = _auto_pick_pct()
     for uid in user_ids:
@@ -195,7 +195,7 @@ def _notify_tournament_auto_picks(slack_client, auto_picks, user_ids: list[str])
     )
     reasoning_line = (
         f"\n> _{auto_picks['reasoning']}_"
-        if auto_picks.get("reasoning") else ""
+        if auto_picks["reasoning"] else ""
     )
     for uid in user_ids:
         try:
