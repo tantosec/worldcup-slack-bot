@@ -1,3 +1,5 @@
+import json
+
 from app import db
 from app.espn import fetch_match_summary, get_goal_scorers, get_match_stats
 from app.flags import home, away, flag
@@ -5,8 +7,10 @@ from app.football import format_kickoff, format_score, format_score_note, stage_
 from app.odds import format_prob_line, format_underdog_line
 from app.scoring import points_label
 
-RESULTS_PAGE_ACTION = "results_page"
-_PAGE_SIZE = 4
+OPEN_RESULTS_MODAL_ACTION = "open_results_modal"
+RESULTS_MODAL_NAV_ACTION = "results_modal_nav"
+_EPHEMERAL_PREVIEW = 3
+_MODAL_PAGE_SIZE = 4
 
 
 def _match_blocks(m, pred) -> list:
@@ -69,7 +73,7 @@ def _match_blocks(m, pred) -> list:
     return blocks
 
 
-def _build_results_blocks(slack_user_id: str, page: int = 0, response_url: str = "") -> list | None:
+def _build_results_blocks(slack_user_id: str) -> list | None:
     with db.db() as conn:
         matches = db.get_all_finished_matches(conn)
         if not matches:
@@ -79,62 +83,86 @@ def _build_results_blocks(slack_user_id: str, page: int = 0, response_url: str =
             for p in db.get_user_predictions_with_matches(conn, slack_user_id)
         }
 
-    total = len(matches)
-    total_pages = max(1, -(-total // _PAGE_SIZE))
-    page = max(0, min(page, total_pages - 1))
-    start = page * _PAGE_SIZE
-    page_matches = matches[start:start + _PAGE_SIZE]
-
     blocks = [{"type": "header", "text": {"type": "plain_text", "text": "🏁 FIFA World Cup 2026 — Recent Results", "emoji": True}}]
 
-    for m in page_matches:
-        pred = preds.get(m["id"])
-        blocks.extend(_match_blocks(m, pred))
+    for m in matches[:_EPHEMERAL_PREVIEW]:
+        blocks.extend(_match_blocks(m, preds.get(m["id"])))
+
+    if len(matches) > _EPHEMERAL_PREVIEW:
+        blocks.append({"type": "divider"})
+        blocks.append({"type": "actions", "elements": [{
+            "type": "button",
+            "text": {"type": "plain_text", "text": f"See all {len(matches)} results →", "emoji": True},
+            "action_id": OPEN_RESULTS_MODAL_ACTION,
+            "value": "open",
+        }]})
+
+    return blocks
+
+
+def _build_results_modal_view(slack_user_id: str, page: int = 0) -> dict:
+    with db.db() as conn:
+        matches = db.get_all_finished_matches(conn)
+        preds = {
+            p["match_id"]: p
+            for p in db.get_user_predictions_with_matches(conn, slack_user_id)
+        }
+
+    total = len(matches)
+    total_pages = max(1, -(-total // _MODAL_PAGE_SIZE))
+    page = max(0, min(page, total_pages - 1))
+    start = page * _MODAL_PAGE_SIZE
+
+    blocks = []
+    for m in matches[start:start + _MODAL_PAGE_SIZE]:
+        blocks.extend(_match_blocks(m, preds.get(m["id"])))
 
     nav_elements = []
     if page > 0:
         nav_elements.append({
             "type": "button",
             "text": {"type": "plain_text", "text": "← Newer", "emoji": True},
-            "action_id": RESULTS_PAGE_ACTION,
-            "value": f"{page - 1}|{response_url}",
+            "action_id": RESULTS_MODAL_NAV_ACTION,
+            "value": str(page - 1),
         })
     if page < total_pages - 1:
         nav_elements.append({
             "type": "button",
             "text": {"type": "plain_text", "text": "Older →", "emoji": True},
-            "action_id": RESULTS_PAGE_ACTION,
-            "value": f"{page + 1}|{response_url}",
+            "action_id": RESULTS_MODAL_NAV_ACTION,
+            "value": str(page + 1),
         })
     if nav_elements:
         blocks.append({"type": "divider"})
         blocks.append({"type": "actions", "elements": nav_elements})
-        blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": f"_Page {page + 1} of {total_pages}  ·  {total} results total_"}]})
+    blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": f"_Page {page + 1} of {total_pages}  ·  {total} results total_"}]})
 
-    return blocks
+    return {
+        "type": "modal",
+        "title": {"type": "plain_text", "text": "Match Results", "emoji": True},
+        "close": {"type": "plain_text", "text": "Close"},
+        "private_metadata": json.dumps({"user_id": slack_user_id}),
+        "blocks": blocks,
+    }
 
 
 def handle_results(respond, body):
     slack_user_id = body["user_id"]
-    response_url = body.get("response_url", "")
-    blocks = _build_results_blocks(slack_user_id, response_url=response_url)
+    blocks = _build_results_blocks(slack_user_id)
     if blocks is None:
         respond(response_type="ephemeral", text="No results yet — check back after the first match!")
         return
     respond(response_type="ephemeral", blocks=blocks, text="FIFA World Cup 2026 — Recent Results")
 
 
-def handle_results_page(ack, body):
+def handle_open_results_modal(ack, body, client):
     ack()
-    from slack_sdk.webhook import WebhookClient
-    slack_user_id = body["user"]["id"]
-    raw_value = body["actions"][0]["value"]
-    page_str, _, response_url = raw_value.partition("|")
-    page = int(page_str)
-    blocks = _build_results_blocks(slack_user_id, page=page, response_url=response_url)
-    if blocks is None:
-        if response_url:
-            WebhookClient(response_url).send(replace_original=True, text="No results found.")
-        return
-    if response_url:
-        WebhookClient(response_url).send(replace_original=True, blocks=blocks, text="FIFA World Cup 2026 — Recent Results")
+    view = _build_results_modal_view(body["user"]["id"], page=0)
+    client.views_open(trigger_id=body["trigger_id"], view=view)
+
+
+def handle_results_modal_nav(ack, body, client):
+    ack()
+    page = int(body["actions"][0]["value"])
+    view = _build_results_modal_view(body["user"]["id"], page=page)
+    client.views_update(view_id=body["view"]["id"], view=view)

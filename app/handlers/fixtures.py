@@ -1,15 +1,15 @@
-import os
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+import json
 
 from app import db
 from app.espn import fetch_match_summary, get_goal_scorers, get_match_stats, get_display_clock
 from app.flags import home, away, vs
-from app.football import format_kickoff, format_score, is_kickoff_passed, stage_label, estimate_match_time
+from app.football import format_kickoff, format_score, stage_label, estimate_match_time
 from app.odds import format_prob_line, format_underdog_line
 
-FIXTURES_PAGE_ACTION = "fixtures_page"
-_PAGE_SIZE = 5
+OPEN_FIXTURES_MODAL_ACTION = "open_fixtures_modal"
+FIXTURES_MODAL_NAV_ACTION = "fixtures_modal_nav"
+_EPHEMERAL_PREVIEW = 3
+_MODAL_PAGE_SIZE = 5
 
 
 def _section(text: str) -> dict:
@@ -36,7 +36,6 @@ def _venue_line(m) -> str | None:
 
 
 def _enrich_live(match: dict) -> tuple:
-    """Fetch ESPN summary for a live match. Returns (scorers, stats, display_clock)."""
     try:
         summary = fetch_match_summary(match["external_id"])
         scorers = get_goal_scorers(summary)
@@ -69,7 +68,7 @@ def _upcoming_blocks(matches: list, user_preds: dict) -> list:
     return blocks
 
 
-def _build_fixtures_blocks(slack_user_id: str, page: int = 0, response_url: str = "") -> list | None:
+def _build_fixtures_blocks(slack_user_id: str) -> list | None:
     with db.db() as conn:
         live_matches = db.get_live_matches(conn)
         upcoming = db.get_all_upcoming_matches(conn)
@@ -85,17 +84,10 @@ def _build_fixtures_blocks(slack_user_id: str, page: int = 0, response_url: str 
     if not live_matches and not upcoming:
         return None
 
-    total_upcoming = len(upcoming)
-    total_pages = max(1, -(-total_upcoming // _PAGE_SIZE))
-    page = max(0, min(page, total_pages - 1))
-    start = page * _PAGE_SIZE
-    page_upcoming = upcoming[start:start + _PAGE_SIZE]
-
     blocks = [
         {"type": "header", "text": {"type": "plain_text", "text": "FIFA World Cup 2026 — Fixtures", "emoji": True}},
     ]
 
-    # ── Live matches (always shown in full) ───────────────────────────────────
     if live_matches:
         blocks += [_divider(), _section(":red_circle:  *LIVE NOW*"), _divider()]
 
@@ -148,54 +140,81 @@ def _build_fixtures_blocks(slack_user_id: str, page: int = 0, response_url: str 
             if no_pick:
                 blocks.append(_context(":ghost:  No pick: " + "  ".join(f"<@{uid}>" for uid in no_pick)))
 
-    # ── Upcoming matches (paginated) ──────────────────────────────────────────
     if upcoming:
         blocks += [_divider(), _section(":calendar:  *Upcoming*"), _divider()]
-        blocks += _upcoming_blocks(page_upcoming, user_preds)
-
-        nav_elements = []
-        if page > 0:
-            nav_elements.append({
+        blocks += _upcoming_blocks(upcoming[:_EPHEMERAL_PREVIEW], user_preds)
+        if len(upcoming) > _EPHEMERAL_PREVIEW:
+            blocks.append({"type": "actions", "elements": [{
                 "type": "button",
-                "text": {"type": "plain_text", "text": "← Previous", "emoji": True},
-                "action_id": FIXTURES_PAGE_ACTION,
-                "value": f"{page - 1}|{response_url}",
-            })
-        if page < total_pages - 1:
-            nav_elements.append({
-                "type": "button",
-                "text": {"type": "plain_text", "text": "Next →", "emoji": True},
-                "action_id": FIXTURES_PAGE_ACTION,
-                "value": f"{page + 1}|{response_url}",
-            })
-        if nav_elements:
-            blocks.append({"type": "actions", "elements": nav_elements})
-        blocks.append(_context(f"_Page {page + 1} of {total_pages}  ·  {total_upcoming} upcoming matches_"))
+                "text": {"type": "plain_text", "text": f"See all {len(upcoming)} upcoming →", "emoji": True},
+                "action_id": OPEN_FIXTURES_MODAL_ACTION,
+                "value": "open",
+            }]})
 
     return blocks
 
 
+def _build_fixtures_modal_view(slack_user_id: str, page: int = 0) -> dict:
+    with db.db() as conn:
+        upcoming = db.get_all_upcoming_matches(conn)
+        user_preds = {
+            p["match_id"]: p
+            for p in db.get_user_predictions_with_matches(conn, slack_user_id)
+        }
+
+    total = len(upcoming)
+    total_pages = max(1, -(-total // _MODAL_PAGE_SIZE))
+    page = max(0, min(page, total_pages - 1))
+    start = page * _MODAL_PAGE_SIZE
+
+    blocks = _upcoming_blocks(upcoming[start:start + _MODAL_PAGE_SIZE], user_preds)
+
+    nav_elements = []
+    if page > 0:
+        nav_elements.append({
+            "type": "button",
+            "text": {"type": "plain_text", "text": "← Previous", "emoji": True},
+            "action_id": FIXTURES_MODAL_NAV_ACTION,
+            "value": str(page - 1),
+        })
+    if page < total_pages - 1:
+        nav_elements.append({
+            "type": "button",
+            "text": {"type": "plain_text", "text": "Next →", "emoji": True},
+            "action_id": FIXTURES_MODAL_NAV_ACTION,
+            "value": str(page + 1),
+        })
+    if nav_elements:
+        blocks.append(_divider())
+        blocks.append({"type": "actions", "elements": nav_elements})
+    blocks.append(_context(f"_Page {page + 1} of {total_pages}  ·  {total} upcoming matches_"))
+
+    return {
+        "type": "modal",
+        "title": {"type": "plain_text", "text": "Upcoming Fixtures", "emoji": True},
+        "close": {"type": "plain_text", "text": "Close"},
+        "private_metadata": json.dumps({"user_id": slack_user_id}),
+        "blocks": blocks,
+    }
+
+
 def handle_fixtures(respond, body):
     slack_user_id = body["user_id"]
-    response_url = body.get("response_url", "")
-    blocks = _build_fixtures_blocks(slack_user_id, response_url=response_url)
+    blocks = _build_fixtures_blocks(slack_user_id)
     if blocks is None:
         respond(response_type="ephemeral", text="No fixtures found. The fixture list may not be loaded yet.")
         return
     respond(response_type="ephemeral", blocks=blocks, text="FIFA World Cup 2026 — Fixtures")
 
 
-def handle_fixtures_page(ack, body):
+def handle_open_fixtures_modal(ack, body, client):
     ack()
-    from slack_sdk.webhook import WebhookClient
-    slack_user_id = body["user"]["id"]
-    raw_value = body["actions"][0]["value"]
-    page_str, _, response_url = raw_value.partition("|")
-    page = int(page_str)
-    blocks = _build_fixtures_blocks(slack_user_id, page=page, response_url=response_url)
-    if blocks is None:
-        if response_url:
-            WebhookClient(response_url).send(replace_original=True, text="No fixtures found.")
-        return
-    if response_url:
-        WebhookClient(response_url).send(replace_original=True, blocks=blocks, text="FIFA World Cup 2026 — Fixtures")
+    view = _build_fixtures_modal_view(body["user"]["id"], page=0)
+    client.views_open(trigger_id=body["trigger_id"], view=view)
+
+
+def handle_fixtures_modal_nav(ack, body, client):
+    ack()
+    page = int(body["actions"][0]["value"])
+    view = _build_fixtures_modal_view(body["user"]["id"], page=page)
+    client.views_update(view_id=body["view"]["id"], view=view)

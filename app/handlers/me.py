@@ -1,3 +1,4 @@
+import json
 import re
 import logging
 
@@ -9,8 +10,10 @@ from app.scoring import TOURNAMENT_PICK_POINTS, SEMI_PICK_POINTS
 
 logger = logging.getLogger(__name__)
 
-MYSTATS_UPCOMING_PAGE_ACTION = "mystats_upcoming_page"
-_UPCOMING_PAGE_SIZE = 5
+OPEN_MYSTATS_MODAL_ACTION = "open_mystats_modal"
+MYSTATS_MODAL_NAV_ACTION = "mystats_modal_nav"
+_EPHEMERAL_PREVIEW = 3
+_MODAL_PAGE_SIZE = 5
 
 
 def _section(text: str) -> dict:
@@ -25,7 +28,7 @@ def _divider() -> dict:
     return {"type": "divider"}
 
 
-def _build_me_blocks(target_id: str, caller_id: str, client, upcoming_page: int = 0, response_url: str = "") -> tuple[list, str]:
+def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]:
     """Build blocks for /mystats. Returns (blocks, title)."""
     viewing_other = target_id != caller_id
 
@@ -157,16 +160,10 @@ def _build_me_blocks(target_id: str, caller_id: str, client, upcoming_page: int 
     else:
         blocks.append(_context("_No finished matches predicted yet._"))
 
-    # ── Upcoming (paginated) ──────────────────────────────────────────────────
+    # ── Upcoming ──────────────────────────────────────────────────────────────
     if upcoming_preds:
-        total_upcoming = len(upcoming_preds)
-        total_pages = max(1, -(-total_upcoming // _UPCOMING_PAGE_SIZE))
-        upcoming_page = max(0, min(upcoming_page, total_pages - 1))
-        start = upcoming_page * _UPCOMING_PAGE_SIZE
-        shown = upcoming_preds[start:start + _UPCOMING_PAGE_SIZE]
-
         blocks += [_divider(), _section("⏰  *Upcoming*")]
-        for p in shown:
+        for p in upcoming_preds[:_EPHEMERAL_PREVIEW]:
             venue_parts = [x for x in [p["venue_name"], p["venue_city"]] if x]
             venue_str = ("  ·  " + ", ".join(venue_parts)) if venue_parts else ""
             blocks.append(_section(
@@ -176,26 +173,13 @@ def _build_me_blocks(target_id: str, caller_id: str, client, upcoming_page: int 
             context_parts = [x for x in [format_prob_line(p), format_underdog_line(p, action=True)] if x]
             if context_parts:
                 blocks.append(_context("  ·  ".join(context_parts)))
-
-        nav_elements = []
-        if upcoming_page > 0:
-            nav_elements.append({
+        if len(upcoming_preds) > _EPHEMERAL_PREVIEW:
+            blocks.append({"type": "actions", "elements": [{
                 "type": "button",
-                "text": {"type": "plain_text", "text": "← Previous", "emoji": True},
-                "action_id": MYSTATS_UPCOMING_PAGE_ACTION,
-                "value": f"{target_id}:{upcoming_page - 1}|{response_url}",
-            })
-        if upcoming_page < total_pages - 1:
-            nav_elements.append({
-                "type": "button",
-                "text": {"type": "plain_text", "text": "Next →", "emoji": True},
-                "action_id": MYSTATS_UPCOMING_PAGE_ACTION,
-                "value": f"{target_id}:{upcoming_page + 1}|{response_url}",
-            })
-        if nav_elements:
-            blocks.append({"type": "actions", "elements": nav_elements})
-        if total_pages > 1:
-            blocks.append(_context(f"_Page {upcoming_page + 1} of {total_pages}  ·  {total_upcoming} upcoming predictions_"))
+                "text": {"type": "plain_text", "text": f"See all {len(upcoming_preds)} upcoming →", "emoji": True},
+                "action_id": OPEN_MYSTATS_MODAL_ACTION,
+                "value": target_id,
+            }]})
 
     return blocks, title
 
@@ -222,25 +206,74 @@ def handle_me(respond, body, client):
                 respond(response_type="ephemeral", text=":wave: You're not enrolled yet — use `/register` to join!")
             return
 
-    response_url = body.get("response_url", "")
-    blocks, title = _build_me_blocks(target_id, caller_id, client, upcoming_page=0, response_url=response_url)
+    blocks, title = _build_me_blocks(target_id, caller_id, client)
     respond(response_type="ephemeral", blocks=blocks, text=title)
 
 
-def handle_mystats_upcoming_page(ack, body, client):
-    ack()
-    from slack_sdk.webhook import WebhookClient
-    caller_id = body["user"]["id"]
+def _build_upcoming_modal_view(target_id: str, page: int = 0) -> dict:
     with db.db() as conn:
-        if not db.is_enrolled(conn, caller_id):
-            return
-    raw_value = body["actions"][0]["value"]
-    value_part, _, response_url = raw_value.partition("|")
-    target_id, page_str = value_part.rsplit(":", 1)
-    page = int(page_str)
-    blocks, title = _build_me_blocks(target_id, caller_id, client, upcoming_page=page, response_url=response_url)
-    if response_url:
-        WebhookClient(response_url).send(replace_original=True, blocks=blocks, text=title)
+        upcoming_preds = db.get_user_upcoming_predictions(conn, target_id)
+
+    total = len(upcoming_preds)
+    total_pages = max(1, -(-total // _MODAL_PAGE_SIZE))
+    page = max(0, min(page, total_pages - 1))
+    start = page * _MODAL_PAGE_SIZE
+
+    blocks = []
+    for p in upcoming_preds[start:start + _MODAL_PAGE_SIZE]:
+        venue_parts = [x for x in [p["venue_name"], p["venue_city"]] if x]
+        venue_str = ("  ·  " + ", ".join(venue_parts)) if venue_parts else ""
+        blocks.append(_section(
+            f"*{vs(p['home_team'], p['away_team'])}*  ·  {format_kickoff(p['kickoff_utc'])}{venue_str}\n"
+            f":pencil: Your pick: *{p['pred_home']} - {p['pred_away']}*"
+        ))
+        context_parts = [x for x in [format_prob_line(p), format_underdog_line(p, action=True)] if x]
+        if context_parts:
+            blocks.append(_context("  ·  ".join(context_parts)))
+
+    nav_elements = []
+    if page > 0:
+        nav_elements.append({
+            "type": "button",
+            "text": {"type": "plain_text", "text": "← Previous", "emoji": True},
+            "action_id": MYSTATS_MODAL_NAV_ACTION,
+            "value": str(page - 1),
+        })
+    if page < total_pages - 1:
+        nav_elements.append({
+            "type": "button",
+            "text": {"type": "plain_text", "text": "Next →", "emoji": True},
+            "action_id": MYSTATS_MODAL_NAV_ACTION,
+            "value": str(page + 1),
+        })
+    if nav_elements:
+        blocks.append(_divider())
+        blocks.append({"type": "actions", "elements": nav_elements})
+    blocks.append(_context(f"_Page {page + 1} of {total_pages}  ·  {total} upcoming predictions_"))
+
+    return {
+        "type": "modal",
+        "title": {"type": "plain_text", "text": "Upcoming Predictions", "emoji": True},
+        "close": {"type": "plain_text", "text": "Close"},
+        "private_metadata": json.dumps({"target_id": target_id}),
+        "blocks": blocks,
+    }
+
+
+def handle_open_mystats_modal(ack, body, client):
+    ack()
+    target_id = body["actions"][0]["value"]
+    view = _build_upcoming_modal_view(target_id, page=0)
+    client.views_open(trigger_id=body["trigger_id"], view=view)
+
+
+def handle_mystats_modal_nav(ack, body, client):
+    ack()
+    metadata = json.loads(body["view"]["private_metadata"])
+    target_id = metadata["target_id"]
+    page = int(body["actions"][0]["value"])
+    view = _build_upcoming_modal_view(target_id, page=page)
+    client.views_update(view_id=body["view"]["id"], view=view)
 
 
 def _picks_text(picks, locked: bool) -> str:

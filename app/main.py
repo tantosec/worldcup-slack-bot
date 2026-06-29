@@ -14,13 +14,27 @@ from app.handlers.predict import (
     CALLBACK_ID, DATE_ACTION,
 )
 from app.handlers.enroll import handle_enroll
-from app.handlers.picks import open_picks_modal, handle_picks_submit, handle_picks_page_action, CALLBACK_ID as PICKS_CALLBACK_ID, SCORER_ACTION, PICKS_PAGE_ACTION
+from app.handlers.picks import (
+    open_picks_modal, handle_picks_submit,
+    handle_open_picks_modal_action, handle_picks_modal_nav,
+    CALLBACK_ID as PICKS_CALLBACK_ID, SCORER_ACTION,
+    OPEN_PICKS_MODAL_ACTION, PICKS_MODAL_NAV_ACTION,
+)
 from app.players import search as search_players
 from app.handlers.leaderboard import handle_leaderboard
-from app.handlers.fixtures import handle_fixtures, handle_fixtures_page, FIXTURES_PAGE_ACTION
-from app.handlers.results import handle_results, handle_results_page, RESULTS_PAGE_ACTION
+from app.handlers.fixtures import (
+    handle_fixtures, handle_open_fixtures_modal, handle_fixtures_modal_nav,
+    OPEN_FIXTURES_MODAL_ACTION, FIXTURES_MODAL_NAV_ACTION,
+)
+from app.handlers.results import (
+    handle_results, handle_open_results_modal, handle_results_modal_nav,
+    OPEN_RESULTS_MODAL_ACTION, RESULTS_MODAL_NAV_ACTION,
+)
 from app.handlers.scoring import handle_scoring
-from app.handlers.me import handle_me, handle_mystats_upcoming_page, MYSTATS_UPCOMING_PAGE_ACTION
+from app.handlers.me import (
+    handle_me, handle_open_mystats_modal, handle_mystats_modal_nav,
+    OPEN_MYSTATS_MODAL_ACTION, MYSTATS_MODAL_NAV_ACTION,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -82,9 +96,14 @@ def view_picks(ack, body, client):
     handle_picks_submit(ack, body, client)
 
 
-@app.action(PICKS_PAGE_ACTION)
-def action_picks_page(ack, body):
-    handle_picks_page_action(ack, body)
+@app.action(OPEN_PICKS_MODAL_ACTION)
+def action_open_picks_modal(ack, body, client):
+    handle_open_picks_modal_action(ack, body, client)
+
+
+@app.action(PICKS_MODAL_NAV_ACTION)
+def action_picks_modal_nav(ack, body, client):
+    handle_picks_modal_nav(ack, body, client)
 
 
 # ── External select: golden boot player search ────────────────────────────────
@@ -133,9 +152,14 @@ def cmd_fixtures(ack, respond, body):
     handle_fixtures(respond, body)
 
 
-@app.action(FIXTURES_PAGE_ACTION)
-def action_fixtures_page(ack, body):
-    handle_fixtures_page(ack, body)
+@app.action(OPEN_FIXTURES_MODAL_ACTION)
+def action_open_fixtures_modal(ack, body, client):
+    handle_open_fixtures_modal(ack, body, client)
+
+
+@app.action(FIXTURES_MODAL_NAV_ACTION)
+def action_fixtures_modal_nav(ack, body, client):
+    handle_fixtures_modal_nav(ack, body, client)
 
 
 # ── Slash command: /results ───────────────────────────────────────────────────
@@ -145,9 +169,14 @@ def cmd_results(ack, respond, body):
     handle_results(respond, body)
 
 
-@app.action(RESULTS_PAGE_ACTION)
-def action_results_page(ack, body):
-    handle_results_page(ack, body)
+@app.action(OPEN_RESULTS_MODAL_ACTION)
+def action_open_results_modal(ack, body, client):
+    handle_open_results_modal(ack, body, client)
+
+
+@app.action(RESULTS_MODAL_NAV_ACTION)
+def action_results_modal_nav(ack, body, client):
+    handle_results_modal_nav(ack, body, client)
 
 
 # ── Slash command: /scoring ───────────────────────────────────────────────────
@@ -164,9 +193,14 @@ def cmd_me(ack, respond, body, client):
     handle_me(respond, body, client)
 
 
-@app.action(MYSTATS_UPCOMING_PAGE_ACTION)
-def action_mystats_upcoming_page(ack, body, client):
-    handle_mystats_upcoming_page(ack, body, client)
+@app.action(OPEN_MYSTATS_MODAL_ACTION)
+def action_open_mystats_modal(ack, body, client):
+    handle_open_mystats_modal(ack, body, client)
+
+
+@app.action(MYSTATS_MODAL_NAV_ACTION)
+def action_mystats_modal_nav(ack, body, client):
+    handle_mystats_modal_nav(ack, body, client)
 
 
 # ── Slash command: /help ──────────────────────────────────────────────────────

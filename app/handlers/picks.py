@@ -8,10 +8,14 @@ from app.scoring import (
     ZEBRA_BOLD, ZEBRA_WILDCARD,
 )
 
+import json
+
 CALLBACK_ID = "submit_tournament_picks"
 WINNER_ACTION = "pick_winner"
-PICKS_PAGE_ACTION = "picks_page"
-PICKS_PAGE_SIZE = 10
+OPEN_PICKS_MODAL_ACTION = "open_picks_modal_view"
+PICKS_MODAL_NAV_ACTION = "picks_modal_nav"
+PICKS_MODAL_PAGE_SIZE = 10
+_EPHEMERAL_PREVIEW = 3
 SCORER_ACTION = "pick_scorer"
 ZEBRA_ACTION = "pick_zebra"
 SEMI_ACTIONS = ["pick_semi1", "pick_semi2", "pick_semi3", "pick_semi4"]
@@ -80,14 +84,14 @@ def open_picks_modal(client, trigger_id: str, slack_user_id: str, response_url: 
             text=f":lock: *Your Tournament Picks*\n{_picks_text(existing, locked=True)}",
         )
 
-        # Channel ephemeral: everyone's picks with pagination
-        everyone_blocks = _build_picks_page_blocks(all_picks, slack_user_id, page=0, response_url=response_url)
+        # Channel ephemeral: preview of others + "see all" button
+        preview_blocks = _build_picks_preview_blocks(all_picks, slack_user_id)
         target_channel = channel_id or slack_user_id
         if response_url:
             from slack_sdk.webhook import WebhookClient
-            WebhookClient(response_url).send(response_type="ephemeral", blocks=everyone_blocks, text="🔮 Everyone's Picks")
+            WebhookClient(response_url).send(response_type="ephemeral", blocks=preview_blocks, text="🔮 Everyone's Picks")
         else:
-            client.chat_postEphemeral(channel=target_channel, user=slack_user_id, blocks=everyone_blocks, text="🔮 Everyone's Picks")
+            client.chat_postEphemeral(channel=target_channel, user=slack_user_id, blocks=preview_blocks, text="🔮 Everyone's Picks")
         return
 
     team_options = [
@@ -341,58 +345,89 @@ def _zebra_tier(team_name: str) -> str:
     return "WILDCARD" if team_name in ZEBRA_WILDCARD else "BOLD"
 
 
-def _build_picks_page_blocks(all_picks: list, caller_id: str, page: int, response_url: str = "") -> list:
+def _build_picks_preview_blocks(all_picks: list, caller_id: str) -> list:
     from app.handlers.me import _picks_text
-
     others = [p for p in all_picks if p["slack_user_id"] != caller_id]
-    total_pages = max(1, -(-len(others) // PICKS_PAGE_SIZE))  # ceil division
-    page = max(0, min(page, total_pages - 1))
-    start = page * PICKS_PAGE_SIZE
-    page_picks = others[start:start + PICKS_PAGE_SIZE]
-
     blocks = [
-        {"type": "header", "text": {"type": "plain_text", "text": f"🔮 Everyone's Picks  ({page + 1}/{total_pages})", "emoji": True}},
+        {"type": "header", "text": {"type": "plain_text", "text": "🔮 Everyone's Picks", "emoji": True}},
         {"type": "context", "elements": [{"type": "mrkdwn", "text": "_Picks are locked. Points update as the tournament progresses._"}]},
     ]
+    for p in others[:_EPHEMERAL_PREVIEW]:
+        blocks.append({"type": "divider"})
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*<@{p['slack_user_id']}>*\n{_picks_text(p, locked=True)}"},
+        })
+    if len(others) > _EPHEMERAL_PREVIEW:
+        blocks.append({"type": "divider"})
+        blocks.append({"type": "actions", "elements": [{
+            "type": "button",
+            "text": {"type": "plain_text", "text": f"See all {len(others)} picks →", "emoji": True},
+            "action_id": OPEN_PICKS_MODAL_ACTION,
+            "value": "open",
+        }]})
+    return blocks
 
-    for p in page_picks:
+
+def _build_picks_modal_view(all_picks: list, caller_id: str, page: int = 0) -> dict:
+    from app.handlers.me import _picks_text
+    others = [p for p in all_picks if p["slack_user_id"] != caller_id]
+    total = len(others)
+    total_pages = max(1, -(-total // PICKS_MODAL_PAGE_SIZE))
+    page = max(0, min(page, total_pages - 1))
+    start = page * PICKS_MODAL_PAGE_SIZE
+
+    blocks = []
+    for p in others[start:start + PICKS_MODAL_PAGE_SIZE]:
         blocks.append({"type": "divider"})
         blocks.append({
             "type": "section",
             "text": {"type": "mrkdwn", "text": f"*<@{p['slack_user_id']}>*\n{_picks_text(p, locked=True)}"},
         })
 
-    # Pagination buttons
     nav_elements = []
     if page > 0:
         nav_elements.append({
             "type": "button",
             "text": {"type": "plain_text", "text": "← Previous", "emoji": True},
-            "action_id": PICKS_PAGE_ACTION,
-            "value": f"{page - 1}|{response_url}",
+            "action_id": PICKS_MODAL_NAV_ACTION,
+            "value": str(page - 1),
         })
     if page < total_pages - 1:
         nav_elements.append({
             "type": "button",
             "text": {"type": "plain_text", "text": "Next →", "emoji": True},
-            "action_id": PICKS_PAGE_ACTION,
-            "value": f"{page + 1}|{response_url}",
+            "action_id": PICKS_MODAL_NAV_ACTION,
+            "value": str(page + 1),
         })
     if nav_elements:
+        blocks.append({"type": "divider"})
         blocks.append({"type": "actions", "elements": nav_elements})
+    blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": f"_Page {page + 1} of {total_pages}  ·  {total} players_"}]})
 
-    return blocks
+    return {
+        "type": "modal",
+        "title": {"type": "plain_text", "text": "Everyone's Picks", "emoji": True},
+        "close": {"type": "plain_text", "text": "Close"},
+        "private_metadata": json.dumps({"caller_id": caller_id}),
+        "blocks": blocks,
+    }
 
 
-def handle_picks_page_action(ack, body):
+def handle_open_picks_modal_action(ack, body, client):
     ack()
-    from slack_sdk.webhook import WebhookClient
     caller_id = body["user"]["id"]
-    raw_value = body["actions"][0]["value"]
-    page_str, _, response_url = raw_value.partition("|")
-    page = int(page_str)
     with db.db() as conn:
         all_picks = db.get_all_picks_for_reveal(conn)
-    blocks = _build_picks_page_blocks(all_picks, caller_id, page, response_url=response_url)
-    if response_url:
-        WebhookClient(response_url).send(replace_original=True, blocks=blocks, text="🔮 Everyone's Picks")
+    view = _build_picks_modal_view(all_picks, caller_id, page=0)
+    client.views_open(trigger_id=body["trigger_id"], view=view)
+
+
+def handle_picks_modal_nav(ack, body, client):
+    ack()
+    caller_id = body["user"]["id"]
+    page = int(body["actions"][0]["value"])
+    with db.db() as conn:
+        all_picks = db.get_all_picks_for_reveal(conn)
+    view = _build_picks_modal_view(all_picks, caller_id, page=page)
+    client.views_update(view_id=body["view"]["id"], view=view)
