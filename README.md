@@ -55,7 +55,8 @@ Players who forget to predict a match or miss the tournament picks deadline are 
 - **Match predictions** — generated once per match at the ~1h kickoff reminder and cached. Applied to all missing players at kickoff so the full predictions board is always complete. Each player gets a DM explaining the pick and the reasoning.
 - **Tournament picks** — generated once at the ~1h tournament picks lock reminder. Applied to all players who haven't submitted when picks lock. Each player gets a DM with their full auto-generated picks.
 - **Fairness** — all players who missed the same match get the identical LLM-generated pick (one LLM call per match, not per player). Nobody gets a different result by accident.
-- **Display** — auto-picks are labelled 🤖 in the kickoff message, `/mystats`, and `/picks`. They count for full points.
+- **Points penalty** — auto-picked match predictions earn **75% of the points** a correct prediction would score (floor division, e.g. 9 pts → 6 pts). Configurable via `AUTO_PICK_POINTS_MULTIPLIER` (0.0–1.0 decimal, default `0.75`). Tournament picks auto-filled by the bot count for full points.
+- **Display** — auto-picks are labelled 🤖 in the kickoff message, `/mystats`, and `/picks`.
 - **Fallback** — if the LLM fails all retries, an odds-based pick is used instead (favourite wins 1–0, or 0–0 for a draw). The 🤖 label still applies.
 
 ## Commands

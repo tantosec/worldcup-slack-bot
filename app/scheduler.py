@@ -18,6 +18,13 @@ from app.autopick import (
     apply_auto_picks_for_match, apply_auto_tournament_picks,
 )
 
+
+def _auto_pick_multiplier() -> float:
+    try:
+        return float(os.getenv("AUTO_PICK_POINTS_MULTIPLIER", "0.75"))
+    except ValueError:
+        return 0.75
+
 logger = logging.getLogger(__name__)
 
 
@@ -115,6 +122,7 @@ def score_finished_matches(slack_client=None):
         with db.db() as conn:
             predictions = db.get_predictions_for_match(conn, match["id"])
 
+            multiplier = _auto_pick_multiplier()
             results = []
             for pred in predictions:
                 pts = calculate_points(
@@ -124,6 +132,8 @@ def score_finished_matches(slack_client=None):
                     match["stage"],
                     match=match,
                 )
+                if pred["is_auto"]:
+                    pts = int(pts * multiplier)
                 db.update_prediction_points(conn, pred["id"], pts)
                 results.append((pred["slack_user_id"], pred["home_score"], pred["away_score"], pts))
 

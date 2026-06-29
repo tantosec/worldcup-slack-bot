@@ -53,6 +53,15 @@ def _validate_env():
         raise SystemExit(f"Invalid DISPLAY_TIMEZONE: '{tz}' — use a valid tz name e.g. 'Australia/Sydney'")
     from app.llm import validate_llm_config
     validate_llm_config()
+    _multiplier_raw = os.getenv("AUTO_PICK_POINTS_MULTIPLIER", "0.75")
+    try:
+        _m = float(_multiplier_raw)
+        if not (0.0 <= _m <= 1.0):
+            raise ValueError
+    except ValueError:
+        raise SystemExit(
+            f"AUTO_PICK_POINTS_MULTIPLIER must be a number between 0.0 and 1.0 (got '{_multiplier_raw}')"
+        )
 
 _validate_env()
 

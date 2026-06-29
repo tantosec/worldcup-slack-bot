@@ -155,11 +155,19 @@ def apply_auto_tournament_picks(slack_client) -> list[str]:
     return missing
 
 
+def _auto_pick_pct() -> int:
+    try:
+        return int(float(os.getenv("AUTO_PICK_POINTS_MULTIPLIER", "0.75")) * 100)
+    except ValueError:
+        return 75
+
+
 def _notify_match_auto_picks(slack_client, match, auto_pick, user_ids: list[str]):
     reasoning_line = (
         f"\n> _{auto_pick['reasoning']}_"
         if auto_pick.get("reasoning") else ""
     )
+    pct = _auto_pick_pct()
     for uid in user_ids:
         try:
             slack_client.chat_postMessage(
@@ -170,7 +178,8 @@ def _notify_match_auto_picks(slack_client, match, auto_pick, user_ids: list[str]
                     f"({stage_label(match['stage'])})\n\n"
                     f"You hadn't predicted this match so I picked "
                     f"*{auto_pick['pred_home']} - {auto_pick['pred_away']}* for you.{reasoning_line}\n\n"
-                    f"This counts for full points. Use `/predict` for future matches to make your own picks."
+                    f":warning: Auto-picks only earn *{pct}% of the points* a correct prediction would score. "
+                    f"Next time, use `/predict` before kickoff to earn *full points!*"
                 ),
             )
         except Exception as exc:

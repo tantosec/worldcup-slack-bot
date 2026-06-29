@@ -149,6 +149,36 @@ def open_predict_modal(client, trigger_id: str, slack_user_id: str):
     )
 
 
+def _next_unpredicted_date(dates, current_date_str):
+    """Return the first date after current_date_str that still has unpredicted matches."""
+    found = False
+    for date_str, total, predicted in dates:
+        if found and predicted < total:
+            return date_str
+        if date_str == current_date_str:
+            found = True
+    return None
+
+
+def _predict_modal_view(options, date_str, match_blocks, submit_label, private_metadata):
+    return {
+        "type": "modal",
+        "callback_id": CALLBACK_ID,
+        "title": {"type": "plain_text", "text": "Make your predictions", "emoji": True},
+        "submit": {"type": "plain_text", "text": submit_label},
+        "close": {"type": "plain_text", "text": "Close"},
+        "private_metadata": private_metadata,
+        "blocks": [
+            _date_picker_block(options, initial=date_str),
+            *match_blocks,
+            {
+                "type": "context",
+                "elements": [{"type": "mrkdwn", "text": ":lock: Predictions lock at kickoff. Leave a match blank to skip."}],
+            },
+        ],
+    }
+
+
 def handle_date_selected(ack, body, client):
     ack()
     view = body["view"]
@@ -163,13 +193,6 @@ def handle_date_selected(ack, body, client):
     match_blocks = _match_blocks(matches)
 
     if not match_blocks:
-        blocks = [
-            _date_picker_block(options, initial=date_str),
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": ":lock: All matches on this date have already kicked off."},
-            },
-        ]
         client.views_update(
             view_id=view["id"],
             hash=view["hash"],
@@ -177,38 +200,35 @@ def handle_date_selected(ack, body, client):
                 "type": "modal",
                 "callback_id": CALLBACK_ID,
                 "title": {"type": "plain_text", "text": "Make your predictions", "emoji": True},
-                "close": {"type": "plain_text", "text": "Cancel"},
+                "close": {"type": "plain_text", "text": "Close"},
                 "private_metadata": view["private_metadata"],
-                "blocks": blocks,
+                "blocks": [
+                    _date_picker_block(options, initial=date_str),
+                    {
+                        "type": "section",
+                        "text": {"type": "mrkdwn", "text": ":lock: All matches on this date have already kicked off."},
+                    },
+                ],
             },
         )
         return
 
+    submit_label = "Save & Next" if _next_unpredicted_date(dates, date_str) else "Save"
     client.views_update(
         view_id=view["id"],
         hash=view["hash"],
-        view={
-            "type": "modal",
-            "callback_id": CALLBACK_ID,
-            "title": {"type": "plain_text", "text": "Make your predictions", "emoji": True},
-            "submit": {"type": "plain_text", "text": "Lock In"},
-            "close": {"type": "plain_text", "text": "Cancel"},
-            "private_metadata": view["private_metadata"],
-            "blocks": [
-                _date_picker_block(options, initial=date_str),
-                *match_blocks,
-                {
-                    "type": "context",
-                    "elements": [{"type": "mrkdwn", "text": ":lock: Predictions lock at kickoff. Leave a match blank to skip."}],
-                },
-            ],
-        },
+        view=_predict_modal_view(options, date_str, match_blocks, submit_label, view["private_metadata"]),
     )
 
 
 def handle_predict_submit(ack, body, client):
     slack_user_id = body["user"]["id"]
-    values = body["view"]["state"]["values"]
+    view = body["view"]
+    values = view["state"]["values"]
+
+    # Get the currently selected date from the picker
+    date_state = values.get("block_date", {}).get(DATE_ACTION, {})
+    current_date = (date_state.get("selected_option") or {}).get("value")
 
     match_ids = set()
     for block_id in values:
@@ -251,31 +271,56 @@ def handle_predict_submit(ack, body, client):
         ack(response_action="errors", errors=errors)
         return
 
-    ack()
-
-    if not saved:
-        client.chat_postEphemeral(
-            channel=slack_user_id,
-            user=slack_user_id,
-            text=":shrug: No predictions submitted — all matches were left blank.",
-        )
-        return
-
+    # Save predictions before ack so we can determine the next date for the modal update
     confirmed = []
-    with db.db() as conn:
-        for match_id, home_score, away_score in saved:
-            match = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
-            if not match or is_kickoff_passed(match["kickoff_utc"]):
-                continue
-            db.upsert_prediction(conn, slack_user_id, match_id, home_score, away_score)
-            confirmed.append((dict(match), home_score, away_score))
+    if saved:
+        with db.db() as conn:
+            for match_id, home_score, away_score in saved:
+                match = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
+                if not match or is_kickoff_passed(match["kickoff_utc"]):
+                    continue
+                db.upsert_prediction(conn, slack_user_id, match_id, home_score, away_score)
+                confirmed.append((dict(match), home_score, away_score))
 
-    if not confirmed:
-        client.chat_postEphemeral(
-            channel=slack_user_id,
-            user=slack_user_id,
-            text=":lock: None of those predictions could be saved — matches may have already kicked off.",
+    # Find next unpredicted date (after saves, so counts are updated)
+    next_date = None
+    next_matches = None
+    next_options = None
+    if current_date:
+        with db.db() as conn:
+            updated_dates = db.get_predict_dates(conn, slack_user_id)
+            next_date = _next_unpredicted_date(updated_dates, current_date)
+            if next_date:
+                next_matches = db.get_matches_for_date(conn, slack_user_id, next_date)
+                next_match_blocks = _match_blocks(next_matches)
+                if not next_match_blocks:
+                    next_date = None  # all kicked off, treat as no next date
+                else:
+                    next_options = [_format_date_option(d, t, p) for d, t, p in updated_dates]
+                    next_submit_label = "Save & Next" if _next_unpredicted_date(updated_dates, next_date) else "Save"
+
+    if next_date:
+        ack(
+            response_action="update",
+            view=_predict_modal_view(next_options, next_date, next_match_blocks, next_submit_label, view["private_metadata"]),
         )
+    else:
+        ack()
+
+    # Post ephemeral confirmation (runs after ack regardless of whether modal stayed open)
+    if not confirmed:
+        if saved:
+            client.chat_postEphemeral(
+                channel=slack_user_id,
+                user=slack_user_id,
+                text=":lock: None of those predictions could be saved — matches may have already kicked off.",
+            )
+        else:
+            client.chat_postEphemeral(
+                channel=slack_user_id,
+                user=slack_user_id,
+                text=":shrug: No predictions submitted — all matches were left blank.",
+            )
         return
 
     blocks = [

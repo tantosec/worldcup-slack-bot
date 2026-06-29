@@ -7,6 +7,7 @@ from app.scoring import (
 
 _MAX_WILDCARD_WINNER = ZEBRA_POINTS["WINNER"] * ZEBRA_WILDCARD_MULTIPLIER
 _ORG = os.getenv("ORG_NAME", "TantoSec")
+_AUTO_PICK_PCT = int(float(os.getenv("AUTO_PICK_POINTS_MULTIPLIER", "0.75")) * 100)
 
 SCORING_BLOCKS = [
     {
@@ -121,8 +122,9 @@ SCORING_BLOCKS = [
                 ":robot_face: *Auto-picks*\n"
                 "Forgot to predict? No worries — the bot will generate a pick for you using AI, "
                 "applied at kickoff so you always appear on the board.\n"
-                "Auto-picks are labelled :robot_face: and count for full points. "
-                "You'll get a DM explaining what was picked and why."
+                f"Auto-picks are labelled :robot_face: and earn *{_AUTO_PICK_PCT}% of the points* a correct prediction would score. "
+                "You'll get a DM explaining what was picked and why.\n"
+                "_Tournament picks auto-filled by the bot count for full points._"
             ),
         },
     },
