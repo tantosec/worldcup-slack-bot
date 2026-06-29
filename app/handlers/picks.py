@@ -79,15 +79,8 @@ def open_picks_modal(client, trigger_id: str, slack_user_id: str, response_url: 
             all_picks = db.get_all_picks_for_reveal(conn)
             own_zebra_knocked_out = db.team_knocked_out(conn, existing["zebra"]) if existing["zebra"] else None
 
-        # DM: just the user's own picks
-        from app.handlers.me import _picks_text
-        client.chat_postMessage(
-            channel=slack_user_id,
-            text=f":lock: *Your Tournament Picks*\n{_picks_text(existing, locked=True, zebra_knocked_out=own_zebra_knocked_out)}",
-        )
-
-        # Channel ephemeral: preview of others + "see all" button
-        preview_blocks = _build_picks_preview_blocks(all_picks, slack_user_id)
+        # Channel ephemeral: own picks first, then preview of others + "see all" button
+        preview_blocks = _build_picks_preview_blocks(all_picks, slack_user_id, own_picks=existing, own_zebra_knocked_out=own_zebra_knocked_out)
         target_channel = channel_id or slack_user_id
         if response_url:
             from slack_sdk.webhook import WebhookClient
@@ -347,7 +340,7 @@ def _zebra_tier(team_name: str) -> str:
     return "WILDCARD" if team_name in ZEBRA_WILDCARD else "BOLD"
 
 
-def _build_picks_preview_blocks(all_picks: list, caller_id: str) -> list:
+def _build_picks_preview_blocks(all_picks: list, caller_id: str, own_picks=None, own_zebra_knocked_out=None) -> list:
     from app.handlers.me import _picks_text
     others = [p for p in all_picks if p["slack_user_id"] != caller_id]
 
@@ -362,6 +355,14 @@ def _build_picks_preview_blocks(all_picks: list, caller_id: str) -> list:
         {"type": "header", "text": {"type": "plain_text", "text": "🔮 Everyone's Picks", "emoji": True}},
         {"type": "context", "elements": [{"type": "mrkdwn", "text": "_Picks are locked. Points update as the tournament progresses._"}]},
     ]
+
+    if own_picks:
+        blocks.append({"type": "divider"})
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*<@{caller_id}>* _(you)_\n{_picks_text(own_picks, locked=True, zebra_knocked_out=own_zebra_knocked_out)}"},
+        })
+
     for p in others[:_EPHEMERAL_PREVIEW]:
         z_status = zebra_statuses.get(p["zebra"]) if p["zebra"] else None
         blocks.append({"type": "divider"})
