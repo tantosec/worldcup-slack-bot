@@ -136,7 +136,7 @@ def _phase_preds_blocks(preds, phase_key: str) -> list[dict]:
                 f"{_pred_icon(p)}  {home(p['home_team'])} {format_score(p)} "
                 f"{away(p['away_team'])}{format_score_note(p)}"
             ))
-            blocks.append(_context(f"*:pencil: Predicted:  {pred_flags} · +{pts} pts{_upset_flag(p)}*"))
+            blocks.append(_context(f"*:pencil: Predicted:  {pred_flags}   →   +{pts} pts{_upset_flag(p)}*"))
 
     return blocks
 
