@@ -7,7 +7,6 @@ from app.espn import fetch_match_summary, get_goal_scorers, get_match_stats
 from app.flags import home, away, flag
 from app.football import format_kickoff, format_score, format_score_note, stage_label
 from app.odds import format_prob_line, format_underdog_line, get_underdog
-from app.scoring import points_label
 
 OPEN_RESULTS_MODAL_ACTION = "open_results_modal"
 RESULTS_MODAL_PREV_ACTION = "results_modal_prev"
@@ -102,8 +101,8 @@ def _match_blocks(m, pred) -> list:
             penalty_pct = round((1 - multiplier) * 100)
             auto_note = f" _(-{penalty_pct}%)_"
 
-        pts_str = points_label(pts)
-        pick_text = f"{result_icon}  {pick_icon} Your pick: *{pred_home} - {pred_away}*  →  *{pts_str}*{upset}{auto_note}"
+        pts_str = "0 pts" if pts == 0 else f"{pts} pts"
+        pick_text = f"{pick_icon} Your pick: *{pred_home} - {pred_away}*  →  *{pts_str}* {result_icon}{upset}{auto_note}"
     else:
         pick_text = ":zipper_mouth_face: _(no prediction)_"
     blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": pick_text}]})
