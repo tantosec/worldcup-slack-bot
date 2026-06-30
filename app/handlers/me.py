@@ -1,6 +1,7 @@
 import json
 import re
 import logging
+from datetime import datetime
 
 from app import db
 from app.flags import flag, home, away, vs
@@ -10,11 +11,58 @@ from app.scoring import TOURNAMENT_PICK_POINTS, SEMI_PICK_POINTS
 
 logger = logging.getLogger(__name__)
 
+# ── Upcoming predictions modal ────────────────────────────────────────────────
 OPEN_MYSTATS_MODAL_ACTION = "open_mystats_modal"
 MYSTATS_MODAL_PREV_ACTION = "mystats_modal_prev"
 MYSTATS_MODAL_NEXT_ACTION = "mystats_modal_next"
 _EPHEMERAL_PREVIEW = 3
 _MODAL_PAGE_SIZE = 5
+
+# ── Phase pagination ──────────────────────────────────────────────────────────
+OPEN_PHASE_MODAL_ACTION = "open_phase_modal"
+PHASE_MODAL_PREV_ACTION = "phase_modal_prev"
+PHASE_MODAL_NEXT_ACTION = "phase_modal_next"
+_INLINE_MAX_MATCHES = 10
+_PHASE_MODAL_PAGE_SIZE = 16
+
+_PHASE_STAGES = [
+    ("GROUP_STAGE",    ["GROUP_STAGE"]),
+    ("LAST_32",        ["LAST_32"]),
+    ("LAST_16",        ["LAST_16"]),
+    ("QUARTER_FINALS", ["QUARTER_FINALS"]),
+    ("SEMI_FINALS",    ["SEMI_FINALS"]),
+    ("FINALS",         ["THIRD_PLACE", "FINAL"]),
+]
+_PHASE_ORDER = [pk for pk, _ in _PHASE_STAGES]
+_PHASE_STAGES_MAP = {pk: stages for pk, stages in _PHASE_STAGES}
+_STAGE_TO_PHASE = {s: pk for pk, stages in _PHASE_STAGES for s in stages}
+
+_PHASE_LABELS = {
+    "GROUP_STAGE":    "Group Stage",
+    "LAST_32":        "Round of 32",
+    "LAST_16":        "Round of 16",
+    "QUARTER_FINALS": "Quarter-finals",
+    "SEMI_FINALS":    "Semi-finals",
+    "FINALS":         "Finals",
+}
+
+_PHASE_BUTTON_TEXT = {
+    "GROUP_STAGE":    "📅 Group Stage",
+    "LAST_32":        "🔵 Round of 32",
+    "LAST_16":        "🔵 Round of 16",
+    "QUARTER_FINALS": "🔥 Quarter-finals",
+    "SEMI_FINALS":    "⭐ Semi-finals",
+    "FINALS":         "🏆 Finals",
+}
+
+_PHASE_MODAL_TITLES = {
+    "GROUP_STAGE":    "Group Stage",
+    "LAST_32":        "Round of 32",
+    "LAST_16":        "Round of 16",
+    "QUARTER_FINALS": "Quarter-finals",
+    "SEMI_FINALS":    "Semi-finals",
+    "FINALS":         "Finals",
+}
 
 
 def _section(text: str) -> dict:
@@ -27,6 +75,82 @@ def _context(text: str) -> dict:
 
 def _divider() -> dict:
     return {"type": "divider"}
+
+
+def _date_group_key(kickoff_utc: str, phase_key: str, stage: str) -> str:
+    dt = datetime.fromisoformat(kickoff_utc.replace("Z", "+00:00"))
+    label = f"{dt.day} {dt.strftime('%b')}"
+    if phase_key == "FINALS":
+        label += " · Final" if stage == "FINAL" else " · 3rd Place"
+    return label
+
+
+def _pred_icon(p) -> str:
+    pts = p["points"] or 0
+    if p["is_auto"]:
+        return ":robot_face:"
+    if p["pred_home"] == p["act_home"] and p["pred_away"] == p["act_away"]:
+        return ":dart:"
+    if pts > 0:
+        return ":white_check_mark:"
+    return ":x:"
+
+
+def _upset_flag(p) -> str:
+    pts = p["points"] or 0
+    if pts <= 0:
+        return ""
+    underdog = get_underdog(p)
+    if not underdog:
+        return ""
+    underdog_won = (
+        (underdog == p["home_team"] and p["home_score"] > p["away_score"]) or
+        (underdog == p["away_team"] and p["away_score"] > p["home_score"])
+    )
+    pred_underdog_wins = (
+        (underdog == p["home_team"] and p["pred_home"] > p["pred_away"]) or
+        (underdog == p["away_team"] and p["pred_away"] > p["pred_home"])
+    )
+    return "  :zap:" if (underdog_won and pred_underdog_wins) else ""
+
+
+def _phase_preds_blocks(preds, phase_key: str) -> list[dict]:
+    """Build blocks for finished predictions (sorted newest-first), grouped by date.
+    Each date group: context (date sep) + per match: section (result) + context (prediction)."""
+    by_date = {}
+    date_order = []
+    for p in preds:
+        key = _date_group_key(p["kickoff_utc"], phase_key, p["stage"])
+        if key not in by_date:
+            by_date[key] = []
+            date_order.append(key)
+        by_date[key].append(p)
+
+    blocks = []
+    for date_key in date_order:
+        blocks.append(_context(f"── {date_key} ──"))
+        for p in by_date[date_key]:
+            pts = p["points"] or 0
+            pred_flags = f"{flag(p['home_team'])} {p['pred_home']}-{p['pred_away']} {flag(p['away_team'])}"
+            blocks.append(_section(
+                f"{_pred_icon(p)}  {home(p['home_team'])} {format_score(p)} "
+                f"{away(p['away_team'])}{format_score_note(p)}"
+            ))
+            blocks.append(_context(f"*:pencil: Predicted:  {pred_flags} · +{pts} pts{_upset_flag(p)}*"))
+
+    return blocks
+
+
+def _current_phase_key(finished_preds, upcoming_preds=None) -> str:
+    """Return the key of the most advanced phase with any prediction (finished or upcoming)."""
+    stage_set = {p["stage"] for p in finished_preds}
+    if upcoming_preds:
+        stage_set |= {p["stage"] for p in upcoming_preds}
+    current = _PHASE_ORDER[0]
+    for pk in _PHASE_ORDER:
+        if any(s in stage_set for s in _PHASE_STAGES_MAP[pk]):
+            current = pk
+    return current
 
 
 def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]:
@@ -119,53 +243,46 @@ def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]
             count_str += f"  ·  :pencil: {still_to_predict} to predict"
         if missed:
             count_str += f"  ·  :x: {missed} missed"
-    blocks += [_divider(), _section(f"⚽  *Match Predictions* ({count_str})")]
 
     if finished_preds:
-        by_stage = {}
-        for p in finished_preds:
-            by_stage.setdefault(p["stage"], []).append(p)
+        current_pk = _current_phase_key(finished_preds, upcoming_preds or [])
+        current_stages = set(_PHASE_STAGES_MAP[current_pk])
+        current_preds = [p for p in finished_preds if p["stage"] in current_stages]
+        phase_label = _PHASE_LABELS[current_pk]
 
-        for stage, stage_preds in by_stage.items():
-            blocks.append(_context(f"*{stage_label(stage)}*"))
-            lines = []
-            for p in stage_preds:
-                pts = p["points"] or 0
-                pred_str = f"{p['pred_home']} - {p['pred_away']}"
+        # Merged header + phase label (cut 1: saves 1 block vs separate section + context)
+        blocks += [_divider(), _section(f"⚽  *{phase_label} Predictions* ({count_str})")]
 
-                if p["is_auto"]:
-                    icon = ":robot_face:"
-                elif p["pred_home"] == p["act_home"] and p["pred_away"] == p["act_away"]:
-                    icon = ":dart:"
-                elif pts > 0:
-                    icon = ":white_check_mark:"
-                else:
-                    icon = ":x:"
+        if current_preds:
+            sorted_current = sorted(current_preds, key=lambda p: p["kickoff_utc"], reverse=True)
+            blocks.extend(_phase_preds_blocks(sorted_current[:_INLINE_MAX_MATCHES], current_pk))
+            if len(current_preds) > _INLINE_MAX_MATCHES:
+                blocks.append({"type": "actions", "elements": [{
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": f"📋 See all {len(current_preds)} {phase_label} predictions →", "emoji": True},
+                    "action_id": OPEN_PHASE_MODAL_ACTION,
+                    "value": json.dumps({"target_id": target_id, "phase_key": current_pk, "page": 0}),
+                }]})
+        else:
+            blocks.append(_context(f"_No {phase_label} results yet._"))
 
-                upset_flag = ""
-                if pts > 0:
-                    underdog = get_underdog(p)
-                    if underdog:
-                        underdog_won = (
-                            (underdog == p["home_team"] and p["home_score"] > p["away_score"]) or
-                            (underdog == p["away_team"] and p["away_score"] > p["home_score"])
-                        )
-                        pred_underdog_wins = (
-                            (underdog == p["home_team"] and p["pred_home"] > p["pred_away"]) or
-                            (underdog == p["away_team"] and p["pred_away"] > p["pred_home"])
-                        )
-                        if underdog_won and pred_underdog_wins:
-                            upset_flag = "  :zap:"
-
-                lines.append(
-                    f"{icon}  {home(p['home_team'])} {format_score(p)} {away(p['away_team'])}{format_score_note(p)}"
-                    f"  ·  Predicted: `{pred_str}`  *+{pts} pts*{upset_flag}"
-                )
-
-            for i in range(0, len(lines), 10):
-                chunk = lines[i:i + 10]
-                blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(chunk)}})
+        # Past phase buttons — no divider, no label (cuts 2 & 3: saves 2 blocks)
+        finished_phase_keys = {_STAGE_TO_PHASE[p["stage"]] for p in finished_preds if p["stage"] in _STAGE_TO_PHASE}
+        past_buttons = []
+        for pk in _PHASE_ORDER:
+            if pk == current_pk:
+                break
+            if pk in finished_phase_keys:
+                past_buttons.append({
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": _PHASE_BUTTON_TEXT[pk], "emoji": True},
+                    "action_id": OPEN_PHASE_MODAL_ACTION,
+                    "value": json.dumps({"target_id": target_id, "phase_key": pk, "page": 0}),
+                })
+        if past_buttons:
+            blocks.append({"type": "actions", "elements": past_buttons})
     else:
+        blocks += [_divider(), _section(f"⚽  *Match Predictions* ({count_str})")]
         blocks.append(_context("_No finished matches predicted yet._"))
 
     # ── Upcoming ──────────────────────────────────────────────────────────────
@@ -218,6 +335,8 @@ def handle_me(respond, body, client):
     blocks, title = _build_me_blocks(target_id, caller_id, client)
     respond(response_type="ephemeral", blocks=blocks, text=title)
 
+
+# ── Upcoming predictions modal ─────────────────────────────────────────────────
 
 def _build_upcoming_modal_view(target_id: str, page: int = 0) -> dict:
     with db.db() as conn:
@@ -285,6 +404,80 @@ def handle_mystats_modal_nav(ack, body, client):
     view = _build_upcoming_modal_view(target_id, page=page)
     client.views_update(view_id=body["view"]["id"], view=view)
 
+
+# ── Phase predictions modal ────────────────────────────────────────────────────
+
+def _build_phase_modal_view(target_id: str, phase_key: str, page: int) -> dict:
+    with db.db() as conn:
+        all_preds = db.get_user_finished_predictions_by_stage(
+            conn, target_id, _PHASE_STAGES_MAP[phase_key]
+        )
+
+    sorted_preds = sorted(all_preds, key=lambda p: p["kickoff_utc"], reverse=True)
+    total = len(sorted_preds)
+    total_pages = max(1, (total + _PHASE_MODAL_PAGE_SIZE - 1) // _PHASE_MODAL_PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    start = page * _PHASE_MODAL_PAGE_SIZE
+    page_preds = sorted_preds[start:start + _PHASE_MODAL_PAGE_SIZE]
+
+    phase_label = _PHASE_LABELS[phase_key]
+    page_info = f"Page {page + 1} of {total_pages}  ·  {total} predictions"
+    blocks = [_context(f"*{phase_label} Predictions*  ·  _{page_info}_")]
+
+    if page_preds:
+        blocks.extend(_phase_preds_blocks(page_preds, phase_key))
+    else:
+        blocks.append(_context(f"_No {phase_label} predictions yet._"))
+
+    nav_elements = []
+    if page > 0:
+        nav_elements.append({
+            "type": "button",
+            "text": {"type": "plain_text", "text": "← Previous", "emoji": True},
+            "action_id": PHASE_MODAL_PREV_ACTION,
+            "value": str(page - 1),
+        })
+    if page < total_pages - 1:
+        nav_elements.append({
+            "type": "button",
+            "text": {"type": "plain_text", "text": "Next →", "emoji": True},
+            "action_id": PHASE_MODAL_NEXT_ACTION,
+            "value": str(page + 1),
+        })
+    if nav_elements:
+        blocks.append(_divider())
+        blocks.append({"type": "actions", "elements": nav_elements})
+
+    return {
+        "type": "modal",
+        "title": {"type": "plain_text", "text": _PHASE_MODAL_TITLES[phase_key], "emoji": True},
+        "close": {"type": "plain_text", "text": "Close"},
+        "private_metadata": json.dumps({"target_id": target_id, "phase_key": phase_key}),
+        "blocks": blocks,
+    }
+
+
+def handle_open_phase_modal(ack, body, client):
+    ack()
+    value = json.loads(body["actions"][0]["value"])
+    target_id = value["target_id"]
+    phase_key = value["phase_key"]
+    page = value.get("page", 0)
+    view = _build_phase_modal_view(target_id, phase_key, page)
+    client.views_open(trigger_id=body["trigger_id"], view=view)
+
+
+def handle_phase_modal_nav(ack, body, client):
+    ack()
+    metadata = json.loads(body["view"]["private_metadata"])
+    target_id = metadata["target_id"]
+    phase_key = metadata["phase_key"]
+    page = int(body["actions"][0]["value"])
+    view = _build_phase_modal_view(target_id, phase_key, page)
+    client.views_update(view_id=body["view"]["id"], view=view)
+
+
+# ── Picks helpers ─────────────────────────────────────────────────────────────
 
 def _picks_text(picks, locked: bool, zebra_knocked_out: bool | None = None) -> str:
     lines = []

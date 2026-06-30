@@ -36,6 +36,8 @@ from app.handlers.scoring import handle_scoring
 from app.handlers.me import (
     handle_me, handle_open_mystats_modal, handle_mystats_modal_nav,
     OPEN_MYSTATS_MODAL_ACTION, MYSTATS_MODAL_PREV_ACTION, MYSTATS_MODAL_NEXT_ACTION,
+    handle_open_phase_modal, handle_phase_modal_nav,
+    OPEN_PHASE_MODAL_ACTION, PHASE_MODAL_PREV_ACTION, PHASE_MODAL_NEXT_ACTION,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -244,6 +246,21 @@ def action_mystats_modal_prev(ack, body, client):
 @app.action(MYSTATS_MODAL_NEXT_ACTION)
 def action_mystats_modal_next(ack, body, client):
     handle_mystats_modal_nav(ack, body, client)
+
+
+@app.action(OPEN_PHASE_MODAL_ACTION)
+def action_open_phase_modal(ack, body, client):
+    handle_open_phase_modal(ack, body, client)
+
+
+@app.action(PHASE_MODAL_PREV_ACTION)
+def action_phase_modal_prev(ack, body, client):
+    handle_phase_modal_nav(ack, body, client)
+
+
+@app.action(PHASE_MODAL_NEXT_ACTION)
+def action_phase_modal_next(ack, body, client):
+    handle_phase_modal_nav(ack, body, client)
 
 
 # ── Slash command: /help ──────────────────────────────────────────────────────

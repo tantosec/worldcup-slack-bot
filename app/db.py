@@ -1090,6 +1090,29 @@ def get_user_finished_predictions(conn: sqlite3.Connection, slack_user_id: str) 
     """, (slack_user_id,)).fetchall()
 
 
+def get_user_finished_predictions_by_stage(
+    conn: sqlite3.Connection, slack_user_id: str, stages: list[str]
+) -> list[sqlite3.Row]:
+    """Return finished predictions for a user filtered to specific stages."""
+    placeholders = ",".join("?" * len(stages))
+    return conn.execute(f"""
+        SELECT m.home_team, m.away_team, m.kickoff_utc, m.stage,
+               m.home_score, m.away_score,
+               COALESCE(m.home_score_90, m.home_score) AS act_home,
+               COALESCE(m.away_score_90, m.away_score) AS act_away,
+               m.duration, m.penalties_home, m.penalties_away,
+               m.et_home, m.et_away,
+               m.home_odds, m.draw_odds, m.away_odds,
+               p.home_score AS pred_home, p.away_score AS pred_away, p.points,
+               COALESCE(p.is_auto, 0) AS is_auto
+        FROM matches m
+        JOIN predictions p ON p.match_id = m.id AND p.slack_user_id = ?
+        WHERE m.status = 'FINISHED'
+          AND m.stage IN ({placeholders})
+        ORDER BY m.kickoff_utc ASC
+    """, [slack_user_id] + list(stages)).fetchall()
+
+
 def get_user_upcoming_predictions(conn: sqlite3.Connection, slack_user_id: str) -> list[sqlite3.Row]:
     """Return upcoming matches where the user has already submitted a prediction."""
     return conn.execute("""
