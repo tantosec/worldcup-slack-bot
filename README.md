@@ -130,11 +130,35 @@ LLM_PROVIDER=pollinations             # pollinations (default) | groq | google
 
 > **Picks lock time** is set via `picks_lock_time` in `app/data/config.json` (interpreted in `DISPLAY_TIMEZONE`). It defaults to the first match kickoff if omitted from config.
 
-### 5. Invite the bot to the channel
+### 5. Generate static data files
+
+The bot needs two static data files baked into the Docker image before the first build.
+
+**Squad players** (used for golden boot autocomplete):
+```bash
+pip install requests
+python scripts/build_players.py
+# Options:
+#   --year 2026            default: 2026
+#   --league fifa.wwc      default: fifa.world (men's WC)
+#   --output path/file.json
+```
+
+**FIFA rankings** (used as underdog fallback when betting odds aren't available yet):
+```bash
+python scripts/build_rankings.py
+# Options:
+#   --gender women         default: men
+#   --output path/file.json
+```
+
+Both scripts write directly to `app/data/` and only need to be re-run if you're setting up for a new competition.
+
+### 6. Invite the bot to the channel
 
 In Slack, run `/invite @<your-bot-name>` in your results channel.
 
-### 6. Deploy
+### 7. Deploy
 
 ```bash
 docker compose up -d
@@ -187,10 +211,88 @@ scripts/
 
 ## Adapting for a New Competition
 
-1. Edit `app/data/config.json` — update competition identity, dates, phases, scoring constants
+1. Edit `app/data/config.json` — update competition identity, dates, phases, and scoring constants (see **config.json Reference** below)
 2. Run `python scripts/build_players.py` to regenerate the squad player list
 3. Run `python scripts/build_rankings.py` to regenerate FIFA rankings
-4. Rebuild the Docker image
+4. Rebuild the Docker image: `docker compose build --no-cache && docker compose up -d`
+
+### 32-team vs 48-team format
+
+The tournament bracket is fully driven by the `phases` array in `config.json`. The key difference between editions is whether there is a **Round of 32** (R32) before the Round of 16.
+
+**48-team format (WC 2026)** — includes R32 as the first knockout round:
+```json
+"phases": [
+  { "key": "GROUP_STAGE", ..., "next_label": "Round of 32" },
+  { "key": "LAST_32", "label": "Round of 32", "multiplier": 1.5, ... },
+  { "key": "LAST_16", "label": "Round of 16", "multiplier": 1.5, ... },
+  ...
+]
+```
+
+**32-team format (WC 2022 and earlier)** — R16 is the first knockout round. Remove the `LAST_32` phase entirely and update `GROUP_STAGE`'s `next_label`:
+```json
+"phases": [
+  { "key": "GROUP_STAGE", ..., "next_label": "Round of 16" },
+  { "key": "LAST_16", "label": "Round of 16", "multiplier": 1.5, ... },
+  ...
+]
+```
+
+Also remove `"LAST_32"` from `zebra_points` and `stage_display`, and set `group_stage_match_count: 48` (8 groups × 6 matches).
+
+### Women's World Cup
+
+Change `espn_slug` to `fifa.wwc` and use `--league fifa.wwc` when running `build_players.py`, and `--gender women` for `build_rankings.py`. The bracket (32-team or 48-team) is configured the same way as above.
+
+## config.json Reference
+
+`app/data/config.json` is the single place to configure everything competition-specific.
+
+### `competition`
+
+| Field | Description |
+|-------|-------------|
+| `name` | Full competition name shown in messages and modals (e.g. `"FIFA World Cup 2026"`) |
+| `short_name` | Abbreviated name used in tighter contexts (e.g. `"WC 2026"`) |
+| `espn_slug` | ESPN league identifier — `fifa.world` for men's WC, `fifa.wwc` for women's WC |
+| `group_stage_match_count` | Total number of group stage matches — used for the group goals prediction (48 for 32-team, 72 for 48-team) |
+| `tournament_start` | First match date `YYYY-MM-DD` — used to bound the fixture import range |
+| `tournament_end` | Last match date `YYYY-MM-DD` |
+| `picks_lock_time` | When tournament picks lock, in `DISPLAY_TIMEZONE`, format `"YYYY-MM-DD HH:MM:SS"`. Omit to lock at the first match kickoff. |
+
+### `phases`
+
+Each phase drives fixture/result pagination, phase wrap announcements, and the `/picks` modal date groupings. Fields per phase:
+
+| Field | Description |
+|-------|-------------|
+| `key` | Internal identifier — must match one of: `GROUP_STAGE`, `LAST_32`, `LAST_16`, `QUARTER_FINALS`, `SEMI_FINALS`, `FINALS` |
+| `label` | Human-readable phase name |
+| `button_text` | Label on the date-picker button in `/predict` and `/fixtures` |
+| `modal_title` | Modal title when viewing this phase |
+| `stages` | ESPN stage codes this phase covers — usually one, but `FINALS` covers `["THIRD_PLACE", "FINAL"]` |
+| `multiplier` | Points multiplier for match predictions in this phase |
+| `next_label` | Name of the next phase — shown in the phase wrap announcement ("Next up: Round of 16") |
+| `stage_labels` | _(optional)_ Per-stage display overrides within a multi-stage phase (used in `FINALS` to label 3rd place vs the Final) |
+
+### `stage_display`
+
+Maps internal stage codes to display strings used in result messages and `/fixtures`. Only knockout stages need entries (group stage has no separate display name).
+
+### `scoring`
+
+| Field | Description |
+|-------|-------------|
+| `tournament_pick_points` | Points for correctly picking the winner or golden boot |
+| `semi_pick_points` | Points per correct semi-finalist pick |
+| `group_goals_win_points` | Points for the closest group stage total goals guess |
+| `group_goals_near_points` | Points for the second closest guess |
+| `zebra_points` | Points map by stage for how far the zebra pick advances — add/remove stages to match the bracket |
+| `zebra_wildcard_multiplier` | Multiplier applied to all zebra points for wildcard-tier picks |
+| `underdog_ratio` | Minimum win-probability ratio for a team to be considered the favourite (default 1.25 — the other team becomes the underdog) |
+| `zebra_bold` | List of ESPN team names eligible for the Bold zebra tier |
+| `zebra_wildcard` | List of ESPN team names eligible for the Wildcard zebra tier |
 
 ## Deployment Notes
 
