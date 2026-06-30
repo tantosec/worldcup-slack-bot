@@ -118,8 +118,6 @@ SLACK_APP_TOKEN=xapp-...
 ODDS_API_KEY=your-key-here            # free at the-odds-api.com
 RESULTS_CHANNEL=C0XXXXXXXXX           # Slack channel ID for announcements
 DISPLAY_TIMEZONE=Australia/Sydney     # timezone for kickoff times
-ORG_NAME=TantoSec                     # organisation name shown in welcome messages (optional)
-
 # Optional — defaults shown
 LIVE_POLL_INTERVAL=10                 # seconds between live score syncs (default: 10)
 POLL_INTERVAL=60                      # seconds between other job cycles (default: 60)

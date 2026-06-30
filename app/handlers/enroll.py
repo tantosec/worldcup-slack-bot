@@ -1,10 +1,7 @@
-import os
 from app import db
 from app.config import COMPETITION_NAME, TOURNAMENT_PICK_POINTS, SEMI_PICK_POINTS, GROUP_GOALS_WIN_POINTS, ZEBRA_POINTS, ZEBRA_WILDCARD_MULTIPLIER
 from app.football import is_kickoff_passed
 
-_ORG = os.getenv("ORG_NAME", "")
-_LEAGUE_TITLE = f"{_ORG} {COMPETITION_NAME}".strip()
 _MAX_WILDCARD_WINNER = ZEBRA_POINTS["WINNER"] * ZEBRA_WILDCARD_MULTIPLIER
 
 
@@ -27,7 +24,7 @@ def handle_enroll(respond, body):
 
     if tournament_started:
         respond(
-            f":tada: *Welcome to the {_LEAGUE_TITLE} Prediction League!*\n"
+            f":tada: *Welcome to the {COMPETITION_NAME} Prediction League!*\n"
             "\n"
             "The tournament is already underway — you can still predict all upcoming matches!\n"
             "\n"
@@ -45,7 +42,7 @@ def handle_enroll(respond, body):
         )
     else:
         respond(
-            f":tada: *Welcome to the {_LEAGUE_TITLE} Prediction League!*\n"
+            f":tada: *Welcome to the {COMPETITION_NAME} Prediction League!*\n"
             "\n"
             "*How to score points:*\n"
             "  :dart: Exact score → *9 pts* · ×1.5–3 in knockouts\n"
