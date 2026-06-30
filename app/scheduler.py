@@ -1923,7 +1923,8 @@ def live_updates(slack_client=None):
 
 
 def start_scheduler(slack_client=None) -> BackgroundScheduler:
-    poll_interval = int(os.getenv("POLL_INTERVAL", "10"))
+    poll_interval = int(os.getenv("POLL_INTERVAL", "60"))
+    live_poll = int(os.getenv("LIVE_POLL_INTERVAL", "10"))
 
     scheduler = BackgroundScheduler(timezone="UTC")
 
@@ -1940,7 +1941,7 @@ def start_scheduler(slack_client=None) -> BackgroundScheduler:
     # Fast poll: live score sync + goal + halftime notifications
     scheduler.add_job(
         lambda: live_updates(slack_client),
-        "interval", seconds=poll_interval, id="live_updates",
+        "interval", seconds=live_poll, id="live_updates",
     )
 
     scheduler.add_job(
@@ -1993,5 +1994,5 @@ def start_scheduler(slack_client=None) -> BackgroundScheduler:
     )
 
     scheduler.start()
-    logger.info("Scheduler started (poll interval %ds)", poll_interval)
+    logger.info("Scheduler started (live poll %ds, other jobs %ds)", live_poll, poll_interval)
     return scheduler

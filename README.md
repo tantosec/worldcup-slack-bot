@@ -121,7 +121,8 @@ DISPLAY_TIMEZONE=Australia/Sydney     # timezone for kickoff times
 ORG_NAME=TantoSec                     # organisation name shown in welcome messages (optional)
 
 # Optional — defaults shown
-POLL_INTERVAL=10                      # seconds between all job cycles — live scores, scoring, announcements (default: 10)
+LIVE_POLL_INTERVAL=10                 # seconds between live score syncs (default: 10)
+POLL_INTERVAL=60                      # seconds between other job cycles (default: 60)
 AUTO_PICK_ENABLED=true                # set to false to disable auto-picks entirely
 AUTO_PICK_POINTS_MULTIPLIER=0.75      # fraction of points auto-picks earn (default: 0.75)
 LLM_PROVIDER=pollinations             # pollinations (default) | groq | google
@@ -198,7 +199,8 @@ scripts/
 - Runs over Socket Mode — no public IP or open ports required, any machine with internet access works
 - SQLite database is persisted via Docker volume at `./data/worldcup.db` on the host; the `./data/` directory is created automatically by Docker Compose on first run
 - Static data files (`config.json`, `players.json`, `fifa_rankings.json`) are baked into the Docker image under `app/data/` — they are not in the volume mount and cannot be overwritten by the running container
-- All jobs (live scores, scoring, kickoff announcements, reminders) run every `POLL_INTERVAL` seconds (default 10s) — ESPN has no rate limits
+- Live score sync runs every `LIVE_POLL_INTERVAL` seconds (default 10s) — ESPN has no rate limits
+- Other jobs (scoring, kickoff announcements, reminders) run every `POLL_INTERVAL` seconds (default 60s)
 - Odds sync runs every 6 hours regardless of `POLL_INTERVAL` to conserve API credits
 - Odds are frozen at kickoff — only `SCHEDULED`/`TIMED` matches are updated
 - Knockout matches with TBD teams are skipped during sync and added automatically once teams are confirmed
