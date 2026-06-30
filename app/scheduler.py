@@ -767,6 +767,170 @@ def send_extra_time_notifications(slack_client):
             logger.error("Failed to post extra time notification for match %s: %s", match["id"], exc)
 
 
+# ─── Extra time halftime notifications ───────────────────────────────────────
+
+def send_et_halftime_notifications(slack_client):
+    """Post an ET half time summary when a match pauses at the ET interval."""
+    channel = os.getenv("RESULTS_CHANNEL")
+    if not channel:
+        return
+
+    with db.db() as conn:
+        matches = db.get_matches_needing_et_halftime_notification(conn)
+
+    for match in matches:
+        curr_home = match["home_score"] or 0
+        curr_away = match["away_score"] or 0
+
+        score_text = (
+            f"*{home(match['home_team'])} {curr_home} - {curr_away} {away(match['away_team'])}*"
+            f"  ·  _{stage_label(match['stage'])}_ _(AET)_"
+        )
+
+        blocks = [
+            _block_section(":stopwatch:  *ET HALF TIME*"),
+            _block_divider(),
+            _block_section(score_text),
+        ]
+
+        try:
+            summary = fetch_match_summary(match["external_id"])
+            goals = get_goal_scorers(summary)
+            stats = get_match_stats(summary)
+            if goals:
+                home_goals = [g for g in goals if g["team_name"] == match["home_team"]]
+                away_goals = [g for g in goals if g["team_name"] == match["away_team"]]
+                goal_lines = []
+                if home_goals:
+                    goal_lines.append(flag(match["home_team"]) + "  " + "  ·  ".join(
+                        f":soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}" for g in home_goals
+                    ))
+                if away_goals:
+                    goal_lines.append(flag(match["away_team"]) + "  " + "  ·  ".join(
+                        f":soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}" for g in away_goals
+                    ))
+                if goal_lines:
+                    blocks.append(_block_context("\n".join(goal_lines)))
+            if stats and stats.get("home_possession"):
+                blocks.append(_block_context(
+                    f":bar_chart:  {match['home_team']} {stats['home_possession']}% poss "
+                    f"·  {stats['home_shots_on_target']} shots on target  ·  "
+                    f"{match['away_team']} {stats['away_possession']}% poss "
+                    f"·  {stats['away_shots_on_target']} shots on target"
+                ))
+        except Exception as exc:
+            logger.warning("Could not fetch ESPN ET halftime stats: %s", exc)
+
+        with db.db() as conn:
+            preds = db.get_match_predictions_all_users(conn, match["id"])
+
+        scorers = []
+        for p in preds:
+            if p["home_score"] is None:
+                continue
+            pts = calculate_points(
+                p["home_score"], p["away_score"],
+                curr_home, curr_away,
+                match["home_team"], match["away_team"],
+                match["stage"],
+                match=match,
+            )
+            if pts > 0:
+                exact = p["home_score"] == curr_home and p["away_score"] == curr_away
+                icon = ":dart:" if exact else ":white_check_mark:"
+                scorers.append((icon, p["slack_user_id"], p["home_score"], p["away_score"], pts, p["is_auto"]))
+
+        if scorers:
+            blocks.append(_block_divider())
+            blocks.append(_block_section("🔮  *Scoring at ET half time*"))
+            sorted_scorers = sorted(scorers, key=lambda x: -x[4])
+            scorer_pairs = [
+                (
+                    f"{icon}  <@{uid}>  `{ph} - {pa}`{'  :robot_face:' if is_auto else ''}",
+                    f"*+{points_label(pts)}*",
+                )
+                for icon, uid, ph, pa, pts, is_auto in sorted_scorers[:10]
+            ]
+            blocks.extend(_block_fields(scorer_pairs))
+            if len(sorted_scorers) > 10:
+                blocks.append(_block_context(f"_...and {len(sorted_scorers) - 10} more scoring_"))
+            blocks.append(_block_actions([{
+                "type": "button",
+                "text": {"type": "plain_text", "text": "See all picks →", "emoji": True},
+                "action_id": "open_live_picks_modal",
+                "value": str(match["id"]),
+            }]))
+
+        try:
+            _post_attachment(
+                slack_client, channel,
+                f"ET Half Time: {match['home_team']} {curr_home} - {curr_away} {match['away_team']}",
+                "#7b1fa2", blocks,
+            )
+            with db.db() as conn:
+                db.mark_et_halftime_notified(conn, match["id"])
+        except Exception as exc:
+            logger.error("Failed to post ET halftime notification for match %s: %s", match["id"], exc)
+
+
+# ─── Extra time second half notifications ─────────────────────────────────────
+
+def send_et_second_half_notifications(slack_client):
+    """Post an 'ET second half underway' message after the ET interval."""
+    channel = os.getenv("RESULTS_CHANNEL")
+    if not channel:
+        return
+
+    with db.db() as conn:
+        matches = db.get_matches_needing_et_second_half_notification(conn)
+
+    for match in matches:
+        curr_home = match["home_score"] or 0
+        curr_away = match["away_score"] or 0
+
+        score_text = (
+            f"*{home(match['home_team'])} {curr_home} - {curr_away} {away(match['away_team'])}*"
+            f"  ·  _{stage_label(match['stage'])}_ _(AET)_"
+        )
+
+        blocks = [
+            _block_section(":large_green_circle:  *EXTRA TIME — SECOND HALF*"),
+            _block_divider(),
+            _block_section(score_text),
+        ]
+
+        try:
+            summary = fetch_match_summary(match["external_id"])
+            goals = get_goal_scorers(summary)
+            if goals:
+                home_goals = [g for g in goals if g["team_name"] == match["home_team"]]
+                away_goals = [g for g in goals if g["team_name"] == match["away_team"]]
+                goal_lines = []
+                if home_goals:
+                    goal_lines.append(flag(match["home_team"]) + "  " + "  ·  ".join(
+                        f":soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}" for g in home_goals
+                    ))
+                if away_goals:
+                    goal_lines.append(flag(match["away_team"]) + "  " + "  ·  ".join(
+                        f":soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}" for g in away_goals
+                    ))
+                if goal_lines:
+                    blocks.append(_block_context("\n".join(goal_lines)))
+        except Exception as exc:
+            logger.warning("Could not fetch ESPN ET second half details: %s", exc)
+
+        try:
+            _post_attachment(
+                slack_client, channel,
+                f"ET Second Half: {match['home_team']} {curr_home} - {curr_away} {match['away_team']}",
+                "#7b1fa2", blocks,
+            )
+            with db.db() as conn:
+                db.mark_et_second_half_notified(conn, match["id"])
+        except Exception as exc:
+            logger.error("Failed to post ET second half notification for match %s: %s", match["id"], exc)
+
+
 # ─── Penalty shootout notifications ──────────────────────────────────────────
 
 def send_shootout_notifications(slack_client):
@@ -1779,6 +1943,8 @@ def live_updates(slack_client=None):
     send_halftime_notifications(slack_client)
     send_second_half_notifications(slack_client)
     send_extra_time_notifications(slack_client)
+    send_et_halftime_notifications(slack_client)
+    send_et_second_half_notifications(slack_client)
     send_shootout_notifications(slack_client)
 
 

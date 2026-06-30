@@ -146,6 +146,8 @@ def init_db():
             ("second_half_notified",   "INTEGER NOT NULL DEFAULT 0"),
             ("extra_time_notified",    "INTEGER NOT NULL DEFAULT 0"),
             ("shootout_notified",      "INTEGER NOT NULL DEFAULT 0"),
+            ("et_halftime_notified",   "INTEGER NOT NULL DEFAULT 0"),
+            ("et_second_half_notified","INTEGER NOT NULL DEFAULT 0"),
             ("venue_name",             "TEXT"),
             ("venue_city",             "TEXT"),
             ("home_score_90",          "INTEGER"),
@@ -783,9 +785,11 @@ def mark_second_half_notified(conn: sqlite3.Connection, match_id: int):
 
 
 def get_matches_needing_extra_time_notification(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    # Include PENALTY_SHOOTOUT so matches that skipped past EXTRA_TIME duration
+    # (while the bot was down) still get an ET notification before the shootout message.
     return conn.execute("""
         SELECT * FROM matches
-        WHERE duration = 'EXTRA_TIME' AND extra_time_notified = 0
+        WHERE duration IN ('EXTRA_TIME', 'PENALTY_SHOOTOUT') AND extra_time_notified = 0
           AND (status = 'IN_PLAY'
                OR (status = 'FINISHED' AND kickoff_utc > datetime('now', '-12 hours')))
         ORDER BY kickoff_utc ASC
@@ -794,6 +798,31 @@ def get_matches_needing_extra_time_notification(conn: sqlite3.Connection) -> lis
 
 def mark_extra_time_notified(conn: sqlite3.Connection, match_id: int):
     conn.execute("UPDATE matches SET extra_time_notified = 1 WHERE id = ?", (match_id,))
+
+
+def get_matches_needing_et_halftime_notification(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("""
+        SELECT * FROM matches
+        WHERE status = 'HALFTIME' AND duration = 'EXTRA_TIME' AND et_halftime_notified = 0
+        ORDER BY kickoff_utc ASC
+    """).fetchall()
+
+
+def mark_et_halftime_notified(conn: sqlite3.Connection, match_id: int):
+    conn.execute("UPDATE matches SET et_halftime_notified = 1 WHERE id = ?", (match_id,))
+
+
+def get_matches_needing_et_second_half_notification(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("""
+        SELECT * FROM matches
+        WHERE status = 'IN_PLAY' AND duration = 'EXTRA_TIME'
+          AND et_halftime_notified = 1 AND et_second_half_notified = 0
+        ORDER BY kickoff_utc ASC
+    """).fetchall()
+
+
+def mark_et_second_half_notified(conn: sqlite3.Connection, match_id: int):
+    conn.execute("UPDATE matches SET et_second_half_notified = 1 WHERE id = ?", (match_id,))
 
 
 def get_matches_needing_shootout_notification(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -808,7 +837,8 @@ def get_matches_needing_shootout_notification(conn: sqlite3.Connection) -> list[
 
 def mark_shootout_notified(conn: sqlite3.Connection, match_id: int):
     conn.execute(
-        "UPDATE matches SET shootout_notified = 1, extra_time_notified = 1 WHERE id = ?",
+        """UPDATE matches SET shootout_notified = 1, extra_time_notified = 1,
+           et_halftime_notified = 1, et_second_half_notified = 1 WHERE id = ?""",
         (match_id,),
     )
 
