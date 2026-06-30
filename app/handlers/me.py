@@ -88,8 +88,6 @@ def _date_group_key(kickoff_utc: str, phase_key: str, stage: str) -> str:
 
 def _pred_icon(p) -> str:
     pts = p["points"] or 0
-    if p["is_auto"]:
-        return ":robot_face:"
     if p["pred_home"] == p["act_home"] and p["pred_away"] == p["act_away"]:
         return ":dart:"
     if pts > 0:
