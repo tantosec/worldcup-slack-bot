@@ -142,10 +142,10 @@ def _phase_preds_blocks(preds, phase_key: str) -> list[dict]:
 
 
 def _current_phase_key(finished_preds, upcoming_preds=None) -> str:
-    """Return the key of the most advanced phase with any prediction (finished or upcoming)."""
+    """Return the key of the most advanced phase with finished predictions.
+    Upcoming predictions are ignored — they can be in future phases and would
+    skip over phases that have results but haven't fully completed yet."""
     stage_set = {p["stage"] for p in finished_preds}
-    if upcoming_preds:
-        stage_set |= {p["stage"] for p in upcoming_preds}
     current = _PHASE_ORDER[0]
     for pk in _PHASE_ORDER:
         if any(s in stage_set for s in _PHASE_STAGES_MAP[pk]):
@@ -235,20 +235,22 @@ def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]
         blocks.append(_context("_(not submitted yet)_"))
 
     # ── Match Predictions ─────────────────────────────────────────────────────
-    count_str = f"{len(finished_preds)} played"
-    if upcoming_preds:
-        count_str += f"  ·  {len(upcoming_preds)} upcoming"
-    if not viewing_other:
-        if still_to_predict:
-            count_str += f"  ·  :pencil: {still_to_predict} to predict"
-        if missed:
-            count_str += f"  ·  :x: {missed} missed"
-
     if finished_preds:
         current_pk = _current_phase_key(finished_preds, upcoming_preds or [])
         current_stages = set(_PHASE_STAGES_MAP[current_pk])
         current_preds = [p for p in finished_preds if p["stage"] in current_stages]
         phase_label = _PHASE_LABELS[current_pk]
+
+        # count_str is phase-specific
+        phase_upcoming = [p for p in (upcoming_preds or []) if p["stage"] in current_stages]
+        count_str = f"{len(current_preds)} played"
+        if phase_upcoming:
+            count_str += f"  ·  {len(phase_upcoming)} upcoming"
+        if not viewing_other:
+            if still_to_predict:
+                count_str += f"  ·  :pencil: {still_to_predict} to predict"
+            if missed:
+                count_str += f"  ·  :x: {missed} missed"
 
         # Merged header + phase label (cut 1: saves 1 block vs separate section + context)
         blocks += [_divider(), _section(f"⚽  *{phase_label} Predictions* ({count_str})")]
@@ -282,7 +284,8 @@ def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]
         if past_buttons:
             blocks.append({"type": "actions", "elements": past_buttons})
     else:
-        blocks += [_divider(), _section(f"⚽  *Match Predictions* ({count_str})")]
+        no_preds_count = f"{len(upcoming_preds)} upcoming" if upcoming_preds else "0 played"
+        blocks += [_divider(), _section(f"⚽  *Match Predictions* ({no_preds_count})")]
         blocks.append(_context("_No finished matches predicted yet._"))
 
     # ── Upcoming ──────────────────────────────────────────────────────────────
@@ -324,36 +327,16 @@ def handle_me(respond, body, client):
         username = text[1:].lower()
         target_id = _lookup_user_by_name(client, username) or caller_id
 
-    try:
-        with db.db() as conn:
-            enrolled = db.is_enrolled(conn, target_id)
-    except Exception:
-        logger.exception("is_enrolled crashed for user %s", target_id)
-        respond(response_type="ephemeral", text=":x: DB error checking enrollment.")
-        return
+    with db.db() as conn:
+        if not db.is_enrolled(conn, target_id):
+            if target_id != caller_id:
+                respond(response_type="ephemeral", text=f":shrug: <@{target_id}> hasn't joined the league yet.")
+            else:
+                respond(response_type="ephemeral", text=":wave: You're not enrolled yet — use `/register` to join!")
+            return
 
-    logger.info("/mystats enrollment check: %s enrolled=%s", target_id, enrolled)
-
-    if not enrolled:
-        if target_id != caller_id:
-            respond(response_type="ephemeral", text=f":shrug: <@{target_id}> hasn't joined the league yet.")
-        else:
-            respond(response_type="ephemeral", text=":wave: You're not enrolled yet — use `/register` to join!")
-        return
-
-    try:
-        blocks, title = _build_me_blocks(target_id, caller_id, client)
-    except Exception:
-        logger.exception("_build_me_blocks crashed for user %s", target_id)
-        respond(response_type="ephemeral", text=":x: Something went wrong building your stats. Check logs.")
-        return
-    logger.info("/mystats built %d blocks for %s", len(blocks), target_id)
-    try:
-        respond(response_type="ephemeral", blocks=blocks, text=title)
-        logger.info("/mystats respond() completed for %s", target_id)
-    except Exception:
-        logger.exception("respond() failed for /mystats: %d blocks", len(blocks))
-        respond(response_type="ephemeral", text=f":x: Failed to send response ({len(blocks)} blocks). Check logs.")
+    blocks, title = _build_me_blocks(target_id, caller_id, client)
+    respond(response_type="ephemeral", blocks=blocks, text=title)
 
 
 # ── Upcoming predictions modal ─────────────────────────────────────────────────
