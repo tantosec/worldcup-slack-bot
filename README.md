@@ -47,9 +47,11 @@ Live betting odds are used — the favourite must be at least 1.25× more likely
 | World Cup Winner | 30 pts |
 | Golden Boot (top scorer) | 30 pts |
 | Semi-finalists (×4) | 15 pts each |
-| Group Stage Total Goals | 25 pts (closest guess) / 10 pts (2nd closest guess) |
+| Group Stage Total Goals | 25 pts (closest) / 10 pts (2nd closest) |
 | Zebra Pick — Bold tier | 10–80 pts depending on how far they go |
 | Zebra Pick — Wildcard tier | ×2 all zebra points |
+
+> **Group Stage Total Goals ties** — players are ranked by distance from the actual total. All players at the same distance share the full points for that tier — no splitting, no bumping. Example: actual total is 150 goals; Players A and B guessed 152, Player C guessed 148 — all three are 2 away, so all three get **25 pts**. Players D and E guessed 145, Player F guessed 155 — all three are 5 away, the next closest distance, so all three get **10 pts**. Everyone else gets 0.
 
 ### Auto-picks 🤖
 Players who forget to predict a match or miss the tournament picks deadline are automatically covered by the LLM auto-pick system.
