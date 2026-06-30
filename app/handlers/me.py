@@ -324,13 +324,22 @@ def handle_me(respond, body, client):
         username = text[1:].lower()
         target_id = _lookup_user_by_name(client, username) or caller_id
 
-    with db.db() as conn:
-        if not db.is_enrolled(conn, target_id):
-            if target_id != caller_id:
-                respond(response_type="ephemeral", text=f":shrug: <@{target_id}> hasn't joined the league yet.")
-            else:
-                respond(response_type="ephemeral", text=":wave: You're not enrolled yet — use `/register` to join!")
-            return
+    try:
+        with db.db() as conn:
+            enrolled = db.is_enrolled(conn, target_id)
+    except Exception:
+        logger.exception("is_enrolled crashed for user %s", target_id)
+        respond(response_type="ephemeral", text=":x: DB error checking enrollment.")
+        return
+
+    logger.info("/mystats enrollment check: %s enrolled=%s", target_id, enrolled)
+
+    if not enrolled:
+        if target_id != caller_id:
+            respond(response_type="ephemeral", text=f":shrug: <@{target_id}> hasn't joined the league yet.")
+        else:
+            respond(response_type="ephemeral", text=":wave: You're not enrolled yet — use `/register` to join!")
+        return
 
     try:
         blocks, title = _build_me_blocks(target_id, caller_id, client)
@@ -338,8 +347,10 @@ def handle_me(respond, body, client):
         logger.exception("_build_me_blocks crashed for user %s", target_id)
         respond(response_type="ephemeral", text=":x: Something went wrong building your stats. Check logs.")
         return
+    logger.info("/mystats built %d blocks for %s", len(blocks), target_id)
     try:
         respond(response_type="ephemeral", blocks=blocks, text=title)
+        logger.info("/mystats respond() completed for %s", target_id)
     except Exception:
         logger.exception("respond() failed for /mystats: %d blocks", len(blocks))
         respond(response_type="ephemeral", text=f":x: Failed to send response ({len(blocks)} blocks). Check logs.")
