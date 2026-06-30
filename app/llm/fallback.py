@@ -1,5 +1,6 @@
 import logging
 from app.football import stage_label
+from app.config import GROUP_STAGE_MATCH_COUNT
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,6 @@ class FallbackProvider:
             "semi1": "Brazil", "semi2": "France", "semi3": "Argentina", "semi4": "Spain",
             "zebra": zebra_bold[0] if zebra_bold else (zebra_wildcard[0] if zebra_wildcard else None),
             "zebra_tier": "BOLD" if zebra_bold else "WILDCARD",
-            "group_goals_guess": 180,
+            "group_goals_guess": int(GROUP_STAGE_MATCH_COUNT * 2.5),
             "reasoning": None,
         }

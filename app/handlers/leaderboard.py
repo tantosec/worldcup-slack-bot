@@ -1,4 +1,5 @@
 from app import db
+from app.config import COMPETITION_NAME
 from app.flags import flag
 
 MEDALS = {1: ":first_place_medal:", 2: ":second_place_medal:", 3: ":third_place_medal:"}
@@ -50,7 +51,7 @@ def handle_leaderboard(respond, client, body):
         return
 
     blocks = [
-        {"type": "header", "text": {"type": "plain_text", "text": "🏆 FIFA World Cup 2026 — Leaderboard", "emoji": True}},
+        {"type": "header", "text": {"type": "plain_text", "text": f"🏆 {COMPETITION_NAME} — Leaderboard", "emoji": True}},
         {"type": "divider"},
     ]
 
@@ -73,4 +74,4 @@ def handle_leaderboard(respond, client, body):
             fields.append({"type": "mrkdwn", "text": right})
         blocks.append({"type": "section", "fields": fields})
 
-    respond(response_type="ephemeral", blocks=blocks, text="FIFA World Cup 2026 — Leaderboard")
+    respond(response_type="ephemeral", blocks=blocks, text=f"{COMPETITION_NAME} — Leaderboard")

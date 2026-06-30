@@ -3,6 +3,8 @@ import logging
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
+from app.config import STAGE_LABELS
+
 logger = logging.getLogger(__name__)
 
 
@@ -16,16 +18,6 @@ def _safe_get(match, *keys):
         except (KeyError, IndexError, TypeError):
             pass
     return None
-
-STAGE_LABELS: dict[str, str] = {
-    "GROUP_STAGE":    "Group Stage",
-    "LAST_32":        "Round of 32",
-    "LAST_16":        "Round of 16",
-    "QUARTER_FINALS": "Quarter-finals",
-    "SEMI_FINALS":    "Semi-finals",
-    "THIRD_PLACE":    "3rd Place",
-    "FINAL":          ":trophy: Final",
-}
 
 
 def stage_label(stage: str) -> str:

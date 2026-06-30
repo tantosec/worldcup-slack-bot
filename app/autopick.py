@@ -19,7 +19,7 @@ def _enabled() -> bool:
 def _load_goal_threat_players() -> list[str]:
     import json as _json
     import os as _os
-    path = _os.path.join(_os.path.dirname(__file__), "players.json")
+    path = _os.path.join(_os.path.dirname(__file__), "data", "players.json")
     data = _json.load(open(path))
     return [p["name"] for p in data if p["position"] in ("Midfield", "Offence")]
 

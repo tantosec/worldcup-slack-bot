@@ -17,6 +17,12 @@ from app.autopick import (
     get_or_generate_auto_match_pick, get_or_generate_auto_tournament_picks,
     apply_auto_picks_for_match, apply_auto_tournament_picks,
 )
+from app.config import (
+    COMPETITION_NAME,
+    GROUP_STAGE_MATCH_COUNT,
+    STAGE_DISPLAY,
+    NEXT_PHASE_LABEL,
+)
 
 
 def _auto_pick_multiplier() -> float:
@@ -1329,15 +1335,6 @@ def post_picks_reveal(slack_client, force: bool = False):
 
 # ─── Phase wrap ───────────────────────────────────────────────────────────────
 
-_STAGE_DISPLAY = {
-    "LAST_32":        "Round of 32",
-    "LAST_16":        "Round of 16",
-    "QUARTER_FINALS": "Quarter-finals",
-    "SEMI_FINALS":    "Semi-finals",
-    "FINAL":          "The Final",
-    "WINNER":         "Champions",
-}
-
 _PHASE_HEADERS = {
     "GROUP_STAGE":    ":soccer:  *Group Stage Complete!*",
     "LAST_32":        ":checkered_flag:  *Round of 32 Complete!*",
@@ -1345,7 +1342,7 @@ _PHASE_HEADERS = {
     "QUARTER_FINALS": ":fire:  *Quarter-finals Complete!*",
     "SEMI_FINALS":    ":star2:  *Semi-finals Complete!*",
     "THIRD_PLACE":    ":third_place_medal:  *3rd Place Match Result*",
-    "FINAL":          ":trophy:  *World Cup 2026 — It's All Over!*",
+    "FINAL":          f":trophy:  *{COMPETITION_NAME} — It's All Over!*",
 }
 
 _PHASE_COLORS = {
@@ -1357,15 +1354,6 @@ _PHASE_COLORS = {
     "THIRD_PLACE":    "#78909c",
     "FINAL":          "#c8a400",
 }
-
-_NEXT_PHASE_LABEL = {
-    "GROUP_STAGE":    "Round of 32",
-    "LAST_32":        "Round of 16",
-    "LAST_16":        "Quarter-final",
-    "QUARTER_FINALS": "Semi-final",
-    "SEMI_FINALS":    "Final",
-}
-
 
 def _build_group_goals_blocks(picks, actual_goals: int) -> list:
     blocks = [
@@ -1429,10 +1417,10 @@ def _build_zebra_blocks(wrap_stage: str, picks) -> list:
                 if stage_key == "WINNER":
                     right = f"*{pts} pts*  :trophy: Champions!"
                 elif stage_key and still_alive:
-                    next_label = _NEXT_PHASE_LABEL.get(wrap_stage, "next round")
+                    next_label = NEXT_PHASE_LABEL.get(wrap_stage, "next round")
                     right = f"*{pts} pts*  ✅ Advancing to {next_label}"
                 elif stage_key:
-                    elim_label = _STAGE_DISPLAY.get(stage_key, stage_key)
+                    elim_label = STAGE_DISPLAY.get(stage_key, stage_key)
                     right = f"*{pts} pts*  ❌ Eliminated in {elim_label}"
                 else:
                     right = f"*{pts} pts*  ❌ Eliminated"
@@ -1652,7 +1640,7 @@ def send_phase_wrap(slack_client):
 
         if stage == "FINAL":
             # Full-width per-user sections to accommodate the point breakdown
-            blocks.append(_block_section(":trophy:  *Final Standings — World Cup 2026 Prediction League*"))
+            blocks.append(_block_section(f":trophy:  *Final Standings — {COMPETITION_NAME} Prediction League*"))
             for i, row in enumerate(leaderboard, start=1):
                 medal = medals.get(i, f"`{i}.`")
                 exact = row["exact_scores"] or 0
@@ -1698,7 +1686,7 @@ def send_phase_wrap(slack_client):
 
         # ─── Next stage CTA (not for THIRD_PLACE or FINAL) ───
         elif stage != "THIRD_PLACE":
-            next_label = _NEXT_PHASE_LABEL.get(stage)
+            next_label = NEXT_PHASE_LABEL.get(stage)
             has_next_fixtures = any(s != stage for s in upcoming_stages) if upcoming_stages else False
             if next_label and has_next_fixtures:
                 blocks.append(_block_divider())
@@ -1801,7 +1789,6 @@ def score_winner_picks_job():
 
 def score_zebra_picks_job():
     from app.scoring import zebra_points as calc_zebra_pts
-    GROUP_STAGE_MATCH_COUNT = 72
     with db.db() as conn:
         group_done = db.count_finished_group_matches(conn) >= GROUP_STAGE_MATCH_COUNT
         picks = db.get_all_tournament_picks(conn)
@@ -1848,7 +1835,6 @@ def score_semi_picks_job():
 
 
 def score_group_goals_job():
-    GROUP_STAGE_MATCH_COUNT = 72
     with db.db() as conn:
         if db.group_goals_already_scored(conn):
             return
@@ -1937,8 +1923,7 @@ def live_updates(slack_client=None):
 
 
 def start_scheduler(slack_client=None) -> BackgroundScheduler:
-    poll_interval = int(os.getenv("POLL_INTERVAL", "60"))
-    live_poll = int(os.getenv("LIVE_POLL_INTERVAL", "10"))
+    poll_interval = int(os.getenv("POLL_INTERVAL", "10"))
 
     scheduler = BackgroundScheduler(timezone="UTC")
 
@@ -1955,7 +1940,7 @@ def start_scheduler(slack_client=None) -> BackgroundScheduler:
     # Fast poll: live score sync + goal + halftime notifications
     scheduler.add_job(
         lambda: live_updates(slack_client),
-        "interval", seconds=live_poll, id="live_updates",
+        "interval", seconds=poll_interval, id="live_updates",
     )
 
     scheduler.add_job(
@@ -2008,5 +1993,5 @@ def start_scheduler(slack_client=None) -> BackgroundScheduler:
     )
 
     scheduler.start()
-    logger.info("Scheduler started (live poll %ds, other jobs %ds)", live_poll, poll_interval)
+    logger.info("Scheduler started (poll interval %ds)", poll_interval)
     return scheduler

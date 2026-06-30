@@ -2,17 +2,14 @@ import logging
 import requests
 from datetime import date, timedelta, datetime, timezone
 from zoneinfo import ZoneInfo
+from app.config import ESPN_SLUG, TOURNAMENT_START, TOURNAMENT_END
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world"
+BASE_URL = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{ESPN_SLUG}"
 
-# WC 2026 group stage matchday date ranges
-_MATCHDAY_RANGES = [
-    (1, date(2026, 6, 12), date(2026, 6, 17)),
-    (2, date(2026, 6, 18), date(2026, 6, 23)),
-    (3, date(2026, 6, 24), date(2026, 6, 27)),
-]
+# ESPN keys all scoreboard dates by Eastern time regardless of match location.
+_ESPN_TZ = ZoneInfo("America/New_York")
 
 _STATUS_MAP = {
     "STATUS_SCHEDULED":        "TIMED",
@@ -90,16 +87,6 @@ def get_90min_scores(summary: dict) -> tuple:
     a90 = _sum_first_two(away_comp.get("linescores"))
     return h90, a90
 
-
-def _matchday(kickoff_utc: str) -> int | None:
-    try:
-        d = datetime.fromisoformat(kickoff_utc.replace("Z", "+00:00")).date()
-        for num, start, end in _MATCHDAY_RANGES:
-            if start <= d <= end:
-                return num
-    except Exception:
-        pass
-    return None
 
 
 def _parse_event(event: dict) -> dict | None:
@@ -180,7 +167,6 @@ def _parse_event(event: dict) -> dict | None:
         "away_team":       away_name,
         "kickoff_utc":     kickoff_utc,
         "stage":           stage,
-        "matchday":        _matchday(kickoff_utc),
         "status":          internal_status,
         "home_score":      home_score,
         "away_score":      away_score,
@@ -224,27 +210,22 @@ def fetch_matches_for_dates(dates: list[date]) -> list[dict]:
 
 
 def fetch_all_matches(from_date: date | None = None) -> list[dict]:
-    """Fetch WC 2026 matches from from_date (default: today) through July 19.
+    """Fetch tournament matches from from_date (default: today) through tournament end date.
 
     Skipping past dates avoids redundant API calls — finished matches are already
-    scored in the DB. Pass from_date=date(2026, 6, 12) for a full historical import.
+    scored in the DB. Pass from_date=TOURNAMENT_START for a full historical import.
     """
-    start = max(from_date or datetime.now(tz=_ESPN_TZ).date(), date(2026, 6, 12))
-    end = date(2026, 7, 19)
+    start = max(from_date or datetime.now(tz=_ESPN_TZ).date(), TOURNAMENT_START)
+    end = TOURNAMENT_END
     if start > end:
         return []
     dates = [start + timedelta(days=i) for i in range((end - start).days + 1)]
     return fetch_matches_for_dates(dates)
 
 
-_ESPN_TZ = ZoneInfo("America/New_York")
-
-
 def fetch_live_matches() -> list[dict]:
     """Fetch yesterday through next 7 days using ESPN's own timezone (America/New_York).
 
-    ESPN keys scoreboard dates by Eastern time regardless of match location,
-    so we must use that timezone to build the correct date strings.
     Yesterday is included so any match missed during a DNS outage or date
     rollover is corrected on the next poll after connectivity recovers.
     The 7-day lookahead ensures newly-confirmed knockout fixtures (once ESPN

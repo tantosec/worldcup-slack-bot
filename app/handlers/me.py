@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 
 from app import db
+from app.config import PHASE_STAGES, PHASE_LABELS, PHASE_BUTTON_TEXT, PHASE_MODAL_TITLES, COMPETITION_SHORT_NAME
 from app.flags import flag, home, away, vs
 from app.football import format_score, format_score_note, format_kickoff, stage_label
 from app.odds import format_prob_line, format_underdog_line, get_underdog
@@ -26,44 +27,9 @@ PHASE_MODAL_NEXT_ACTION = "phase_modal_next"
 _INLINE_MAX_MATCHES = 10
 _PHASE_MODAL_PAGE_SIZE = 16
 
-_PHASE_STAGES = [
-    ("GROUP_STAGE",    ["GROUP_STAGE"]),
-    ("LAST_32",        ["LAST_32"]),
-    ("LAST_16",        ["LAST_16"]),
-    ("QUARTER_FINALS", ["QUARTER_FINALS"]),
-    ("SEMI_FINALS",    ["SEMI_FINALS"]),
-    ("FINALS",         ["THIRD_PLACE", "FINAL"]),
-]
-_PHASE_ORDER = [pk for pk, _ in _PHASE_STAGES]
-_PHASE_STAGES_MAP = {pk: stages for pk, stages in _PHASE_STAGES}
-_STAGE_TO_PHASE = {s: pk for pk, stages in _PHASE_STAGES for s in stages}
-
-_PHASE_LABELS = {
-    "GROUP_STAGE":    "Group Stage",
-    "LAST_32":        "Round of 32",
-    "LAST_16":        "Round of 16",
-    "QUARTER_FINALS": "Quarter-finals",
-    "SEMI_FINALS":    "Semi-finals",
-    "FINALS":         "Finals",
-}
-
-_PHASE_BUTTON_TEXT = {
-    "GROUP_STAGE":    "📅 Group Stage",
-    "LAST_32":        "🔵 Round of 32",
-    "LAST_16":        "🔵 Round of 16",
-    "QUARTER_FINALS": "🔥 Quarter-finals",
-    "SEMI_FINALS":    "⭐ Semi-finals",
-    "FINALS":         "🏆 Finals",
-}
-
-_PHASE_MODAL_TITLES = {
-    "GROUP_STAGE":    "Group Stage",
-    "LAST_32":        "Round of 32",
-    "LAST_16":        "Round of 16",
-    "QUARTER_FINALS": "Quarter-finals",
-    "SEMI_FINALS":    "Semi-finals",
-    "FINALS":         "Finals",
-}
+_PHASE_ORDER = [pk for pk, _ in PHASE_STAGES]
+_PHASE_STAGES_MAP = {pk: stages for pk, stages in PHASE_STAGES}
+_STAGE_TO_PHASE = {s: pk for pk, stages in PHASE_STAGES for s in stages}
 
 
 def _section(text: str) -> dict:
@@ -211,7 +177,7 @@ def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]
         if picks["group_goals_points"] is not None:
             bonus_fields.append({"type": "mrkdwn", "text": f":goal_net: *Group goals*\n{picks['group_goals_points']} pts"})
 
-    title = f"📊 {header_name} World Cup 2026 Stats"
+    title = f"📊 {header_name} {COMPETITION_SHORT_NAME} Stats"
     blocks = [
         {"type": "header", "text": {"type": "plain_text", "text": title, "emoji": True}},
         {
@@ -244,7 +210,7 @@ def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]
         current_pk = _current_phase_key(finished_preds, upcoming_preds or [])
         current_stages = set(_PHASE_STAGES_MAP[current_pk])
         current_preds = [p for p in finished_preds if p["stage"] in current_stages]
-        phase_label = _PHASE_LABELS[current_pk]
+        phase_label = PHASE_LABELS[current_pk]
 
         # count_str is phase-specific
         phase_upcoming = [p for p in (upcoming_preds or []) if p["stage"] in current_stages]
@@ -282,7 +248,7 @@ def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]
             if pk in finished_phase_keys:
                 past_buttons.append({
                     "type": "button",
-                    "text": {"type": "plain_text", "text": _PHASE_BUTTON_TEXT[pk], "emoji": True},
+                    "text": {"type": "plain_text", "text": PHASE_BUTTON_TEXT[pk], "emoji": True},
                     "action_id": OPEN_PHASE_MODAL_ACTION,
                     "value": json.dumps({"target_id": target_id, "phase_key": pk, "page": 0}),
                 })
@@ -428,7 +394,7 @@ def _build_phase_modal_view(target_id: str, phase_key: str, page: int) -> dict:
     start = page * _PHASE_MODAL_PAGE_SIZE
     page_preds = sorted_preds[start:start + _PHASE_MODAL_PAGE_SIZE]
 
-    phase_label = _PHASE_LABELS[phase_key]
+    phase_label = PHASE_LABELS[phase_key]
     page_info = f"Page {page + 1} of {total_pages}  ·  {total} predictions"
     blocks = [_context(f"*{phase_label} Predictions*  ·  _{page_info}_")]
 
@@ -458,7 +424,7 @@ def _build_phase_modal_view(target_id: str, phase_key: str, page: int) -> dict:
 
     return {
         "type": "modal",
-        "title": {"type": "plain_text", "text": _PHASE_MODAL_TITLES[phase_key], "emoji": True},
+        "title": {"type": "plain_text", "text": PHASE_MODAL_TITLES[phase_key], "emoji": True},
         "close": {"type": "plain_text", "text": "Close"},
         "private_metadata": json.dumps({"target_id": target_id, "phase_key": phase_key}),
         "blocks": blocks,

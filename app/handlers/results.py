@@ -1,6 +1,7 @@
 import json
 
 from app import db
+from app.config import COMPETITION_NAME
 from app.espn import fetch_match_summary, get_goal_scorers, get_match_stats
 from app.flags import home, away, flag
 from app.football import format_kickoff, format_score, format_score_note, stage_label
@@ -85,7 +86,7 @@ def _build_results_blocks(slack_user_id: str) -> list | None:
             for p in db.get_user_predictions_with_matches(conn, slack_user_id)
         }
 
-    blocks = [{"type": "header", "text": {"type": "plain_text", "text": "🏁 FIFA World Cup 2026 — Recent Results", "emoji": True}}]
+    blocks = [{"type": "header", "text": {"type": "plain_text", "text": f"🏁 {COMPETITION_NAME} — Recent Results", "emoji": True}}]
 
     for m in matches[:_EPHEMERAL_PREVIEW]:
         blocks.extend(_match_blocks(m, preds.get(m["id"])))
@@ -154,7 +155,7 @@ def handle_results(respond, body):
     if blocks is None:
         respond(response_type="ephemeral", text="No results yet — check back after the first match!")
         return
-    respond(response_type="ephemeral", blocks=blocks, text="FIFA World Cup 2026 — Recent Results")
+    respond(response_type="ephemeral", blocks=blocks, text=f"{COMPETITION_NAME} — Recent Results")
 
 
 def handle_open_results_modal(ack, body, client):

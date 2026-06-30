@@ -4,38 +4,32 @@ from app.scoring import (
     GROUP_GOALS_WIN_POINTS, GROUP_GOALS_NEAR_POINTS,
     ZEBRA_POINTS, ZEBRA_WILDCARD_MULTIPLIER, ZEBRA_BOLD, ZEBRA_WILDCARD,
 )
+from app.config import COMPETITION_NAME, GROUP_STAGE_MATCH_COUNT
 
 _MAX_WILDCARD_WINNER = ZEBRA_POINTS["WINNER"] * ZEBRA_WILDCARD_MULTIPLIER
-_ORG = os.getenv("ORG_NAME", "TantoSec")
 _AUTO_PICK_PCT = int(float(os.getenv("AUTO_PICK_POINTS_MULTIPLIER", "0.75")) * 100)
 
 
-def _lock_display_env() -> str:
-    """Format picks lock time for display using env vars only (no DB — used at module level).
-
-    Returns a phrase ready to follow 'locks':
-      'on Thursday, 18 Jun 2026 at 4:00 PM'  (when PICKS_LOCK_TIME is set)
-      'at the first match kickoff'             (when not set — no DB available here)
-    """
+def _lock_display() -> str:
     from datetime import datetime
     from zoneinfo import ZoneInfo
+    from app.config import PICKS_LOCK_TIME
     from app.db import normalize_picks_lock_time
-    override = os.getenv("PICKS_LOCK_TIME", "").strip()
-    if not override:
+    if not PICKS_LOCK_TIME:
         return "at the first match kickoff"
-    utc_str = normalize_picks_lock_time(override)
+    utc_str = normalize_picks_lock_time(PICKS_LOCK_TIME)
     tz_name = os.getenv("DISPLAY_TIMEZONE", "Australia/Sydney")
     dt = datetime.fromisoformat(utc_str.replace("Z", "+00:00"))
     local = dt.astimezone(ZoneInfo(tz_name))
     return "on " + local.strftime("%A, %-d %b %Y at %-I:%M %p")
 
 
-_LOCK_DISPLAY = _lock_display_env()
+_LOCK_DISPLAY = _lock_display()
 
 SCORING_BLOCKS = [
     {
         "type": "header",
-        "text": {"type": "plain_text", "text": f"⚽ {_ORG} World Cup 2026 — Scoring Rules", "emoji": True},
+        "text": {"type": "plain_text", "text": f"⚽ {COMPETITION_NAME} — Scoring Rules", "emoji": True},
     },
     {"type": "divider"},
     {
@@ -68,7 +62,7 @@ SCORING_BLOCKS = [
             "type": "mrkdwn",
             "text": (
                 "*Knockout multipliers*\n"
-                "R32 / R16 → ×1.5  ·  QF → ×2  ·  SF / 3rd → ×2.5  ·  :trophy: Final → ×3\n"
+                "R32 / R16 → ×1.5  ·  QF → ×2  ·  SF → ×2.5  ·  3rd / :trophy: Final → ×3\n"
                 "_(exact score in the Final = 27 pts!)_"
             ),
         },
@@ -93,7 +87,7 @@ SCORING_BLOCKS = [
             "type": "mrkdwn",
             "text": (
                 f"*:goal_net: Group Stage Total Goals* _(optional)_\n"
-                f"Guess total goals across all 72 group matches\n"
+                f"Guess total goals across all {GROUP_STAGE_MATCH_COUNT} group matches\n"
                 f"1st closest → *{GROUP_GOALS_WIN_POINTS} pts*  ·  2nd closest → *{GROUP_GOALS_NEAR_POINTS} pts*"
             ),
         },
@@ -157,4 +151,4 @@ SCORING_BLOCKS = [
 
 
 def handle_scoring(respond, body):
-    respond(response_type="ephemeral", blocks=SCORING_BLOCKS, text=f"{_ORG} World Cup 2026 — Scoring Rules")
+    respond(response_type="ephemeral", blocks=SCORING_BLOCKS, text=f"{COMPETITION_NAME} — Scoring Rules")

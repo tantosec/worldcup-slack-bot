@@ -1,0 +1,104 @@
+{
+  "competition": {
+    "name": "FIFA World Cup 2026",
+    "short_name": "WC 2026",
+    "espn_slug": "fifa.world",
+    "group_stage_match_count": 72,
+    "tournament_start": "2026-06-12",
+    "tournament_end": "2026-07-19",
+    "picks_lock_time": "2026-06-18 18:00:00"
+  },
+  "phases": [
+    {
+      "key": "GROUP_STAGE",
+      "label": "Group Stage",
+      "button_text": "📅 Group Stage",
+      "modal_title": "Group Stage",
+      "stages": ["GROUP_STAGE"],
+      "multiplier": 1.0,
+      "next_label": "Round of 32"
+    },
+    {
+      "key": "LAST_32",
+      "label": "Round of 32",
+      "button_text": "🔵 Round of 32",
+      "modal_title": "Round of 32",
+      "stages": ["LAST_32"],
+      "multiplier": 1.5,
+      "next_label": "Round of 16"
+    },
+    {
+      "key": "LAST_16",
+      "label": "Round of 16",
+      "button_text": "🔵 Round of 16",
+      "modal_title": "Round of 16",
+      "stages": ["LAST_16"],
+      "multiplier": 1.5,
+      "next_label": "Quarter-final"
+    },
+    {
+      "key": "QUARTER_FINALS",
+      "label": "Quarter-finals",
+      "button_text": "🔥 Quarter-finals",
+      "modal_title": "Quarter-finals",
+      "stages": ["QUARTER_FINALS"],
+      "multiplier": 2.0,
+      "next_label": "Semi-final"
+    },
+    {
+      "key": "SEMI_FINALS",
+      "label": "Semi-finals",
+      "button_text": "⭐ Semi-finals",
+      "modal_title": "Semi-finals",
+      "stages": ["SEMI_FINALS"],
+      "multiplier": 2.5,
+      "next_label": "Final"
+    },
+    {
+      "key": "FINALS",
+      "label": "Finals",
+      "button_text": "🏆 Finals",
+      "modal_title": "Finals",
+      "stages": ["THIRD_PLACE", "FINAL"],
+      "multiplier": 3.0,
+      "stage_labels": {
+        "THIRD_PLACE": "3rd Place",
+        "FINAL": ":trophy: Final"
+      }
+    }
+  ],
+  "stage_display": {
+    "LAST_32":        "Round of 32",
+    "LAST_16":        "Round of 16",
+    "QUARTER_FINALS": "Quarter-finals",
+    "SEMI_FINALS":    "Semi-finals",
+    "FINAL":          "The Final",
+    "WINNER":         "Champions"
+  },
+  "scoring": {
+    "tournament_pick_points": 30,
+    "semi_pick_points": 15,
+    "group_goals_win_points": 25,
+    "group_goals_near_points": 10,
+    "zebra_points": {
+      "LAST_32":        10,
+      "LAST_16":        20,
+      "QUARTER_FINALS": 35,
+      "SEMI_FINALS":    50,
+      "FINAL":          65,
+      "WINNER":         80
+    },
+    "zebra_wildcard_multiplier": 2,
+    "underdog_ratio": 1.25,
+    "zebra_bold": [
+      "Australia", "South Korea", "Canada", "Ecuador", "Austria",
+      "Norway", "Sweden", "Türkiye", "Iran", "Ghana", "Ivory Coast",
+      "Algeria", "Tunisia", "Egypt", "Scotland", "Czechia", "Saudi Arabia"
+    ],
+    "zebra_wildcard": [
+      "Paraguay", "South Africa", "Bosnia-Herzegovina", "Uzbekistan",
+      "Jordan", "Iraq", "Qatar", "Congo DR", "Panama",
+      "New Zealand", "Cape Verde", "Haiti", "Curaçao"
+    ]
+  }
+}

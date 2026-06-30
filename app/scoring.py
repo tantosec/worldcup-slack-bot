@@ -1,45 +1,16 @@
 from app.fifa_rankings import get_rank
 from app.odds import get_underdog
-
-STAGE_MULTIPLIERS: dict[str, float] = {
-    "GROUP_STAGE":    1.0,
-    "LAST_32":        1.5,
-    "LAST_16":        1.5,
-    "QUARTER_FINALS": 2.0,
-    "SEMI_FINALS":    2.5,
-    "THIRD_PLACE":    2.5,
-    "FINAL":          3.0,
-}
-
-TOURNAMENT_PICK_POINTS = 30
-
-SEMI_PICK_POINTS = 15          # per correct semi-finalist (4 picks × 15 = 60 max)
-
-GROUP_GOALS_WIN_POINTS = 25    # closest guess
-GROUP_GOALS_NEAR_POINTS = 10   # second closest guess
-
-# Points for zebra pick based on how far they go
-ZEBRA_POINTS: dict[str, int] = {
-    "LAST_32":        10,
-    "LAST_16":        20,
-    "QUARTER_FINALS": 35,
-    "SEMI_FINALS":    50,
-    "FINAL":          65,
-    "WINNER":         80,
-}
-ZEBRA_WILDCARD_MULTIPLIER = 2
-
-ZEBRA_BOLD = [
-    "Australia", "South Korea", "Canada", "Ecuador", "Austria",
-    "Norway", "Sweden", "Türkiye", "Iran", "Ghana", "Ivory Coast",
-    "Algeria", "Tunisia", "Egypt", "Scotland", "Czechia", "Saudi Arabia",
-]
-
-ZEBRA_WILDCARD = [
-    "Paraguay", "South Africa", "Bosnia-Herzegovina", "Uzbekistan",
-    "Jordan", "Iraq", "Qatar", "Congo DR", "Panama",
-    "New Zealand", "Cape Verde", "Haiti", "Curaçao",
-]
+from app.config import (
+    STAGE_MULTIPLIERS,
+    TOURNAMENT_PICK_POINTS,
+    SEMI_PICK_POINTS,
+    GROUP_GOALS_WIN_POINTS,
+    GROUP_GOALS_NEAR_POINTS,
+    ZEBRA_POINTS,
+    ZEBRA_WILDCARD_MULTIPLIER,
+    ZEBRA_BOLD,
+    ZEBRA_WILDCARD,
+)
 
 
 def score_semi_picks(user_picks: set[str], actual_semis: set[str]) -> int:

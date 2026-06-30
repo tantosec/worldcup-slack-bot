@@ -3,6 +3,7 @@ import os
 import requests
 from datetime import datetime, timezone
 
+from app.config import UNDERDOG_RATIO
 from app.fifa_rankings import get_rank
 from app.flags import flag
 
@@ -129,9 +130,6 @@ def format_prob_line(match) -> str | None:
     return f":bar_chart: Pre-match odds: {flag(home)} {home} *{h_pct}%*  ·  Draw *{d_pct}%*  ·  {flag(away)} {away} *{a_pct}%*"
 
 
-_UNDERDOG_RATIO = 1.25  # favorite must be at least 25% more likely to win
-
-
 def sync_odds_if_stale(conn, max_age_minutes: int = 60) -> None:
     """Fetch fresh odds only if last sync was more than max_age_minutes ago."""
     from app import db as _db
@@ -160,9 +158,9 @@ def get_underdog(match) -> str | None:
     if h_odds and d_odds and a_odds:
         h_pct, _d_pct, a_pct = odds_to_probs(h_odds, d_odds, a_odds)
         if h_pct > 0 and a_pct > 0:
-            if a_pct / h_pct >= _UNDERDOG_RATIO:
+            if a_pct / h_pct >= UNDERDOG_RATIO:
                 return match["home_team"]
-            if h_pct / a_pct >= _UNDERDOG_RATIO:
+            if h_pct / a_pct >= UNDERDOG_RATIO:
                 return match["away_team"]
         # Odds too close — fall back to FIFA rankings
 
@@ -170,9 +168,9 @@ def get_underdog(match) -> str | None:
     home_rank = get_rank(match["home_team"])
     away_rank = get_rank(match["away_team"])
     if home_rank > 0 and away_rank > 0:
-        if home_rank / away_rank >= _UNDERDOG_RATIO:
+        if home_rank / away_rank >= UNDERDOG_RATIO:
             return match["home_team"]
-        if away_rank / home_rank >= _UNDERDOG_RATIO:
+        if away_rank / home_rank >= UNDERDOG_RATIO:
             return match["away_team"]
     return None
 

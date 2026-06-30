@@ -7,6 +7,8 @@ from app.scoring import (
     ZEBRA_POINTS, ZEBRA_WILDCARD_MULTIPLIER,
     ZEBRA_BOLD, ZEBRA_WILDCARD,
 )
+from app.config import GROUP_STAGE_MATCH_COUNT
+from app.players import _PLAYERS
 
 import json
 
@@ -38,7 +40,7 @@ _SCORING_RUNDOWN = (
     "\n"
     f"*:four: Semi-finalists* _(pick all 4 — {SEMI_PICK_POINTS} pts per correct team, {SEMI_PICK_POINTS * 4} pts max)_\n"
     "\n"
-    f"*:goal_net: Group Stage Goals* _(guess total goals across all 72 group matches)_\n"
+    f"*:goal_net: Group Stage Goals* _(guess total goals across all {GROUP_STAGE_MATCH_COUNT} group matches)_\n"
     f"  1st closest → *{GROUP_GOALS_WIN_POINTS} pts* · "
     f"2nd closest → *{GROUP_GOALS_NEAR_POINTS} pts*\n"
     "\n"
@@ -128,7 +130,7 @@ def open_picks_modal(client, trigger_id: str, slack_user_id: str, response_url: 
         "type": "input",
         "block_id": "block_scorer",
         "label": {"type": "plain_text", "text": ":athletic_shoe: Golden Boot (top scorer)"},
-        "hint": {"type": "plain_text", "text": "Start typing a player's name to search all 1,248 WC squad players."},
+        "hint": {"type": "plain_text", "text": f"Start typing a player's name to search all {len(_PLAYERS):,} WC squad players."},
         "element": {
             "type": "external_select",
             "action_id": SCORER_ACTION,
@@ -206,7 +208,7 @@ def open_picks_modal(client, trigger_id: str, slack_user_id: str, response_url: 
         "label": {"type": "plain_text", "text": ":goal_net: Group Stage Total Goals (optional)"},
         "hint": {
             "type": "plain_text",
-            "text": f"Guess the total goals across all 72 group matches. 1st closest wins {GROUP_GOALS_WIN_POINTS} pts, 2nd closest wins {GROUP_GOALS_NEAR_POINTS} pts.",
+            "text": f"Guess the total goals across all {GROUP_STAGE_MATCH_COUNT} group matches. 1st closest wins {GROUP_GOALS_WIN_POINTS} pts, 2nd closest wins {GROUP_GOALS_NEAR_POINTS} pts.",
         },
         "element": {
             "type": "plain_text_input",

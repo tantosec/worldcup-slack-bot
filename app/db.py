@@ -36,7 +36,6 @@ def init_db():
                 away_team       TEXT NOT NULL,
                 kickoff_utc     TEXT NOT NULL,
                 stage           TEXT NOT NULL DEFAULT 'GROUP_STAGE',
-                matchday        INTEGER,
                 status          TEXT NOT NULL DEFAULT 'SCHEDULED',
                 home_score      INTEGER,
                 away_score      INTEGER,
@@ -216,7 +215,6 @@ def upsert_match_espn(conn: sqlite3.Connection, m: dict):
             away_score     = :away_score,
             winner         = :winner,
             duration       = :duration,
-            matchday       = COALESCE(:matchday, matchday),
             venue_name     = COALESCE(:venue_name, venue_name),
             venue_city     = COALESCE(:venue_city, venue_city)
         WHERE external_id = :external_id
@@ -234,7 +232,6 @@ def upsert_match_espn(conn: sqlite3.Connection, m: dict):
             away_score     = :away_score,
             winner         = :winner,
             duration       = :duration,
-            matchday       = COALESCE(:matchday, matchday),
             venue_name     = COALESCE(:venue_name, venue_name),
             venue_city     = COALESCE(:venue_city, venue_city)
         WHERE home_team = :home_team AND away_team = :away_team
@@ -247,12 +244,12 @@ def upsert_match_espn(conn: sqlite3.Connection, m: dict):
     # Step 3: truly new match
     conn.execute("""
         INSERT OR IGNORE INTO matches (
-            external_id, home_team, away_team, kickoff_utc, stage, matchday,
+            external_id, home_team, away_team, kickoff_utc, stage,
             status, home_score, away_score, winner, duration,
             et_home, et_away, penalties_home, penalties_away,
             venue_name, venue_city
         ) VALUES (
-            :external_id, :home_team, :away_team, :kickoff_utc, :stage, :matchday,
+            :external_id, :home_team, :away_team, :kickoff_utc, :stage,
             :status, :home_score, :away_score, :winner, :duration,
             :et_home, :et_away, :penalties_home, :penalties_away,
             :venue_name, :venue_city
@@ -263,12 +260,12 @@ def upsert_match_espn(conn: sqlite3.Connection, m: dict):
 def upsert_match(conn: sqlite3.Connection, m: dict):
     conn.execute("""
         INSERT INTO matches (
-            external_id, home_team, away_team, kickoff_utc, stage, matchday,
+            external_id, home_team, away_team, kickoff_utc, stage,
             status, home_score, away_score, winner, duration,
             et_home, et_away, penalties_home, penalties_away
         )
         VALUES (
-            :external_id, :home_team, :away_team, :kickoff_utc, :stage, :matchday,
+            :external_id, :home_team, :away_team, :kickoff_utc, :stage,
             :status, :home_score, :away_score, :winner, :duration,
             :et_home, :et_away, :penalties_home, :penalties_away
         )
@@ -278,7 +275,6 @@ def upsert_match(conn: sqlite3.Connection, m: dict):
             away_score     = excluded.away_score,
             kickoff_utc    = excluded.kickoff_utc,
             stage          = excluded.stage,
-            matchday       = excluded.matchday,
             winner         = excluded.winner,
             duration       = excluded.duration,
             et_home        = excluded.et_home,
@@ -617,14 +613,16 @@ def team_has_last32_fixture(conn: sqlite3.Connection, team_name: str) -> bool:
 
 
 def team_knocked_out(conn: sqlite3.Connection, team_name: str) -> bool:
-    """True if team has a finished knockout match where they didn't win (i.e. eliminated)."""
+    """True if team has a finished knockout match where they lost (i.e. eliminated)."""
     row = conn.execute(
         """SELECT COUNT(*) FROM matches
-           WHERE (home_team = ? OR away_team = ?)
-             AND stage != 'GROUP_STAGE'
+           WHERE stage != 'GROUP_STAGE'
              AND status = 'FINISHED'
-             AND winner != ?""",
-        (team_name, team_name, team_name),
+             AND (
+               (home_team = ? AND winner = 'AWAY_TEAM')
+               OR (away_team = ? AND winner = 'HOME_TEAM')
+             )""",
+        (team_name, team_name),
     ).fetchone()
     return row[0] > 0
 
@@ -659,14 +657,6 @@ def get_first_knockout_kickoff(conn: sqlite3.Connection) -> str | None:
     return row["kickoff_utc"] if row else None
 
 
-def get_first_matchday2_kickoff(conn: sqlite3.Connection) -> str | None:
-    row = conn.execute("""
-        SELECT kickoff_utc FROM matches
-        WHERE stage = 'GROUP_STAGE' AND matchday = 2
-        ORDER BY kickoff_utc ASC LIMIT 1
-    """).fetchone()
-    return row["kickoff_utc"] if row else None
-
 
 def normalize_picks_lock_time(value: str) -> str:
     """Convert a PICKS_LOCK_TIME env value to a UTC ISO string.
@@ -689,13 +679,12 @@ def normalize_picks_lock_time(value: str) -> str:
 def get_picks_lock_time(conn: sqlite3.Connection) -> str | None:
     """Return the picks lock datetime (UTC ISO string).
 
-    Priority:
-    1. PICKS_LOCK_TIME env var (explicit override — used when bot deployed mid-tournament)
-    2. First match kickoff in DB (correct default for a properly deployed bot)
+    Uses picks_lock_time from config.json (interpreted in DISPLAY_TIMEZONE).
+    Falls back to the first match kickoff if not set in config.
     """
-    override = os.getenv("PICKS_LOCK_TIME")
-    if override:
-        return normalize_picks_lock_time(override)
+    from app.config import PICKS_LOCK_TIME
+    if PICKS_LOCK_TIME:
+        return normalize_picks_lock_time(PICKS_LOCK_TIME)
     return get_first_match_kickoff(conn)
 
 
@@ -723,8 +712,9 @@ def format_picks_lock_display(conn: sqlite3.Connection) -> str:
     lock_time = get_picks_lock_time(conn)
     if not lock_time:
         return "unknown"
+    from app.config import PICKS_LOCK_TIME
     formatted = _format_lock_dt(lock_time)
-    if not os.getenv("PICKS_LOCK_TIME"):
+    if not PICKS_LOCK_TIME:
         return f"{formatted} (first match kickoff)"
     return formatted
 
@@ -738,8 +728,9 @@ def format_picks_lock_short(conn: sqlite3.Connection) -> str:
     lock_time = get_picks_lock_time(conn)
     if not lock_time:
         return "unknown"
+    from app.config import PICKS_LOCK_TIME
     formatted = _format_lock_dt(lock_time, short=True)
-    if not os.getenv("PICKS_LOCK_TIME"):
+    if not PICKS_LOCK_TIME:
         return f"{formatted} (first match kickoff)"
     return formatted
 

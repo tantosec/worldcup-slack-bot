@@ -2,7 +2,7 @@ import json
 import os
 import unicodedata
 
-_PATH = os.path.join(os.path.dirname(__file__), "players.json")
+_PATH = os.path.join(os.path.dirname(__file__), "data", "players.json")
 
 with open(_PATH, encoding="utf-8") as _f:
     _PLAYERS: list[dict] = json.load(_f)

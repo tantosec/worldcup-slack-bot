@@ -1,8 +1,10 @@
-# TantoSec World Cup 2026 Prediction League Bot
+# World Cup Slack Prediction Bot
 
 ![WC 2026 Bot](worldcup.png)
 
-A Slack bot for running an internal World Cup 2026 prediction league. Players predict match scores, make tournament picks, and earn points throughout the tournament. Everything is scored and announced automatically.
+A Slack bot for running an internal FIFA World Cup prediction league. Players predict match scores, make tournament picks, and earn points throughout the tournament. Everything is scored and announced automatically.
+
+Competition identity (name, dates, phases, scoring constants) is driven by `app/data/config.json` — no code changes required to adapt the bot for a new edition.
 
 ## Features
 
@@ -14,7 +16,7 @@ A Slack bot for running an internal World Cup 2026 prediction league. Players pr
 - **Goal notifications** — live alert within ~10 seconds of every goal, with scorer name, minute, and current standings
 - **Halftime notifications** — halftime summary with scorers, possession/shots stats, and prediction standings
 - **Win probabilities** — live betting odds shown in every match message (predict modal, reminders, kickoff, goals, results)
-- **Underdog detection** — automatically identifies the underdog using betting odds (≥15% win probability gap) with FIFA rankings as fallback
+- **Underdog detection** — automatically identifies the underdog using betting odds (favourite must be ≥1.25× more likely to win) with FIFA rankings as fallback
 - **Live fixtures** — `/fixtures` shows in-progress matches with current score and everyone's predictions
 - **Result summaries** — full-time result posted to channel with goalscorer recap, possession and shots stats, everyone's predictions, points, and top 10 leaderboard
 - **Personal DMs** — each player gets a DM with their points and rank after every match
@@ -23,7 +25,7 @@ A Slack bot for running an internal World Cup 2026 prediction league. Players pr
 - **Picks reveal** — all tournament picks posted publicly when picks lock
 - **Leaderboard** — live standings available any time
 - **Player stats** — full prediction history and picks visible per player via `/mystats @user`
-- **Auto-picks** — LLM-generated predictions for players who forget, applied at kickoff, so nobody is missing from the board. Uses Pollinations AI by default (no account required); Groq and Google Gemini supported as drop-in replacements. Auto-picks are labelled 🤖 everywhere they appear and count for full points.
+- **Auto-picks** — LLM-generated predictions for players who forget, applied at kickoff. Match auto-picks earn 75% of points; tournament auto-picks count for full points. Uses Pollinations AI by default (no account required); Groq and Google Gemini supported as drop-in replacements. Auto-picks are labelled 🤖 everywhere they appear.
 
 ## Scoring
 
@@ -34,18 +36,18 @@ A Slack bot for running an internal World Cup 2026 prediction league. Players pr
 | Correct result (W/D/L) | 3 pts |
 | Upset bonus (predicted the underdog wins — and they did) | +2 pts |
 
-**Knockout multipliers:** ×1.5 (R32/R16) · ×2 (QF) · ×2.5 (SF/3rd) · ×3 (Final)
+**Knockout multipliers:** ×1.5 (R32/R16) · ×2 (QF) · ×2.5 (SF) · ×3 (3rd Place / Final)
 
 **How is the underdog determined?**
-Live betting odds are used — the team with the lower win probability is the underdog, but only when the gap is ≥15 percentage points (closer matches are too ambiguous to call). When odds aren't available yet, FIFA rankings are used as a fallback (gap ≥15 positions). A draw does **not** trigger the upset bonus — you need to predict the underdog wins outright.
+Live betting odds are used — the favourite must be at least 1.25× more likely to win (probability ratio ≥ 1.25) for a team to be considered the underdog. When odds aren't available yet, FIFA rankings are used as a fallback (the higher-ranked team's rank number must be at least 1.25× the lower-ranked team's). A draw does **not** trigger the upset bonus — you need to predict the underdog wins outright.
 
-### Tournament Picks _(lock time configurable via `PICKS_LOCK_TIME`)_
+### Tournament Picks _(lock time set via `picks_lock_time` in `config.json`)_
 | Pick | Points |
 |------|--------|
 | World Cup Winner | 30 pts |
 | Golden Boot (top scorer) | 30 pts |
 | Semi-finalists (×4) | 15 pts each |
-| Group Stage Total Goals | 25 pts (closest) / 10 pts (within ±5) |
+| Group Stage Total Goals | 25 pts (closest guess) / 10 pts (2nd closest guess) |
 | Zebra Pick — Bold tier | 10–80 pts depending on how far they go |
 | Zebra Pick — Wildcard tier | ×2 all zebra points |
 
@@ -64,7 +66,7 @@ Players who forget to predict a match or miss the tournament picks deadline are 
 | Command | Description |
 |---------|-------------|
 | `/register` | Join the prediction league |
-| `/picks` | Set tournament picks (locks at first match kickoff, or `PICKS_LOCK_TIME` if configured) |
+| `/picks` | Set tournament picks (locks at time set in `config.json`, defaults to first match kickoff) |
 | `/predict` | Predict match scores — pick a date, fill in scores |
 | `/leaderboard` | Current standings |
 | `/fixtures` | Upcoming fixtures + live matches with all predictions during games |
@@ -114,24 +116,24 @@ Edit `.env`:
 SLACK_BOT_TOKEN=xoxb-...
 SLACK_APP_TOKEN=xapp-...
 ODDS_API_KEY=your-key-here            # free at the-odds-api.com
-RESULTS_CHANNEL=C0XXXXXXXXX           # Slack channel ID for #worldcup-2026
+RESULTS_CHANNEL=C0XXXXXXXXX           # Slack channel ID for announcements
 DISPLAY_TIMEZONE=Australia/Sydney     # timezone for kickoff times
-LIVE_POLL_INTERVAL=10                 # seconds between live score syncs (default: 10)
-POLL_INTERVAL=60                      # seconds between other job cycles (default: 60)
-ORG_NAME=TantoSec                     # organisation name shown in messages
+ORG_NAME=TantoSec                     # organisation name shown in welcome messages (optional)
 
-# Auto-pick — optional, defaults shown
-AUTO_PICK_ENABLED=true                # set to false to disable entirely
+# Optional — defaults shown
+POLL_INTERVAL=10                      # seconds between all job cycles — live scores, scoring, announcements (default: 10)
+AUTO_PICK_ENABLED=true                # set to false to disable auto-picks entirely
+AUTO_PICK_POINTS_MULTIPLIER=0.75      # fraction of points auto-picks earn (default: 0.75)
 LLM_PROVIDER=pollinations             # pollinations (default) | groq | google
 # GROQ_API_KEY=                       # required if LLM_PROVIDER=groq
 # GOOGLE_AI_API_KEY=                  # required if LLM_PROVIDER=google
-# PICKS_LOCK_TIME=2026-06-18 18:00:00 # YYYY-MM-DD HH:MM:SS in DISPLAY_TIMEZONE; time is optional (defaults to 00:00:00)
-                                      # omit to lock at first match kickoff
 ```
+
+> **Picks lock time** is set via `picks_lock_time` in `app/data/config.json` (interpreted in `DISPLAY_TIMEZONE`). It defaults to the first match kickoff if omitted from config.
 
 ### 5. Invite the bot to the channel
 
-In Slack, run `/invite @WC 2026 Bot` in your results channel.
+In Slack, run `/invite @<your-bot-name>` in your results channel.
 
 ### 6. Deploy
 
@@ -140,7 +142,7 @@ docker compose up -d
 docker compose logs -f
 ```
 
-The bot initializes the database, imports all 104 fixtures from ESPN, and starts listening on first run.
+The bot initialises the database, imports all fixtures from ESPN, and starts listening on first run. The `./data/` directory is created automatically by Docker Compose on first run — this is where `worldcup.db` is persisted on the host.
 
 ## Project Structure
 
@@ -155,15 +157,19 @@ app/
 ├── scoring.py           # Points calculation logic
 ├── autopick.py          # LLM auto-pick logic — generates, caches, and applies picks
 ├── players.py           # Player search for golden boot autocomplete
-├── players.json         # 1,249 WC 2026 squad players
 ├── flags.py             # Country flag emoji map
-├── fifa_rankings.py     # Official June 2026 FIFA rankings (underdog fallback)
+├── fifa_rankings.py     # FIFA rankings loader (underdog fallback)
+├── config.py            # Competition config loader — reads app/data/config.json
+├── data/
+│   ├── config.json      # Competition identity, phases, scoring constants
+│   ├── players.json     # Squad players (generated by scripts/build_players.py)
+│   └── fifa_rankings.json  # FIFA rankings (generated by scripts/build_rankings.py)
 ├── llm/
 │   ├── __init__.py      # get_provider() factory + startup validation
 │   ├── base.py          # LLMProvider protocol
 │   ├── pollinations.py  # Pollinations AI (default, no key required)
-│   ├── groq.py          # Groq stub (set LLM_PROVIDER=groq + GROQ_API_KEY)
-│   ├── google.py        # Google Gemini stub (set LLM_PROVIDER=google + GOOGLE_AI_API_KEY)
+│   ├── groq.py          # Groq (set LLM_PROVIDER=groq + GROQ_API_KEY)
+│   ├── google.py        # Google Gemini (set LLM_PROVIDER=google + GOOGLE_AI_API_KEY)
 │   └── fallback.py      # Odds-based fallback when all LLM attempts fail
 └── handlers/
     ├── predict.py       # /predict — dynamic date picker modal
@@ -173,15 +179,26 @@ app/
     ├── fixtures.py      # /fixtures
     ├── results.py       # /results
     ├── scoring.py       # /scoring
-    ├── me.py            # /mystats
+    └── me.py            # /mystats
+
+scripts/
+├── build_players.py     # Fetch squad players from ESPN API → app/data/players.json
+└── build_rankings.py    # Fetch FIFA rankings from official API → app/data/fifa_rankings.json
 ```
+
+## Adapting for a New Competition
+
+1. Edit `app/data/config.json` — update competition identity, dates, phases, scoring constants
+2. Run `python scripts/build_players.py` to regenerate the squad player list
+3. Run `python scripts/build_rankings.py` to regenerate FIFA rankings
+4. Rebuild the Docker image
 
 ## Deployment Notes
 
 - Runs over Socket Mode — no public IP or open ports required, any machine with internet access works
-- SQLite database is persisted via Docker volume at `./data/worldcup.db`
-- Live score sync (`live_updates`) runs every `LIVE_POLL_INTERVAL` seconds (default 10s) — ESPN has no rate limits
-- Other jobs (scoring, kickoff announcements, reminders) run every `POLL_INTERVAL` seconds (default 60s)
+- SQLite database is persisted via Docker volume at `./data/worldcup.db` on the host; the `./data/` directory is created automatically by Docker Compose on first run
+- Static data files (`config.json`, `players.json`, `fifa_rankings.json`) are baked into the Docker image under `app/data/` — they are not in the volume mount and cannot be overwritten by the running container
+- All jobs (live scores, scoring, kickoff announcements, reminders) run every `POLL_INTERVAL` seconds (default 10s) — ESPN has no rate limits
 - Odds sync runs every 6 hours regardless of `POLL_INTERVAL` to conserve API credits
 - Odds are frozen at kickoff — only `SCHEDULED`/`TIMED` matches are updated
 - Knockout matches with TBD teams are skipped during sync and added automatically once teams are confirmed
@@ -190,4 +207,4 @@ app/
 - Auto-pick LLM calls happen at the ~1h kickoff reminder (not at kickoff) — by the time the match starts the result is cached, so kickoff messages are never delayed
 - With `LLM_PROVIDER=pollinations` (default) no API key is needed — the provider allows 1 queued request per IP with ~5–20s response time, which is well within the 1-hour window
 - Switching LLM providers requires only changing `LLM_PROVIDER` and adding the corresponding key — no code changes needed
-- Set `PICKS_LOCK_TIME` when deploying mid-tournament; leave it unset for a clean deploy before the competition starts
+- Set `picks_lock_time` in `config.json` to the intended lock datetime (interpreted in `DISPLAY_TIMEZONE`); omit it to lock at the first match kickoff

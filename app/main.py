@@ -33,6 +33,7 @@ from app.handlers.results import (
     OPEN_RESULTS_MODAL_ACTION, RESULTS_MODAL_PREV_ACTION, RESULTS_MODAL_NEXT_ACTION,
 )
 from app.handlers.scoring import handle_scoring
+from app.config import COMPETITION_NAME
 from app.handlers.me import (
     handle_me, handle_open_mystats_modal, handle_mystats_modal_nav,
     OPEN_MYSTATS_MODAL_ACTION, MYSTATS_MODAL_PREV_ACTION, MYSTATS_MODAL_NEXT_ACTION,
@@ -79,7 +80,7 @@ def global_error_handler(error, body, logger):
 
 
 _HELP_TEXT = (
-    "*:soccer: World Cup 2026 Bot — commands*\n\n"
+    f"*:soccer: {COMPETITION_NAME} Bot — commands*\n\n"
     "  `/register`     — join the prediction league\n"
     "  `/picks`        — set tournament picks (winner, golden boot, semi-finalists, zebra, group goals)\n"
     "  `/predict`      — predict scores for a matchday (pick a date, fill in scores)\n"
