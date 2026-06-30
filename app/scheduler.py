@@ -218,7 +218,7 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None, c
     if duration == "PENALTY_SHOOTOUT":
         ft_label = "🏁  *FULL TIME*  _(Penalties)_"
     elif duration == "EXTRA_TIME":
-        ft_label = "🏁  *FULL TIME*  _(AET)_"
+        ft_label = "🏁  *FULL TIME*  _(Extra Time)_"
 
     score_text = (
         f"*{home(match['home_team'])} {format_score(match)} {away(match['away_team'])}{format_score_note(match)}*\n"
@@ -784,7 +784,7 @@ def send_et_halftime_notifications(slack_client):
 
         score_text = (
             f"*{home(match['home_team'])} {curr_home} - {curr_away} {away(match['away_team'])}*"
-            f"  ·  _{stage_label(match['stage'])}_ _(AET)_"
+            f"  ·  _{stage_label(match['stage'])}_ _(Extra Time)_"
         )
 
         blocks = [
@@ -890,7 +890,7 @@ def send_et_second_half_notifications(slack_client):
 
         score_text = (
             f"*{home(match['home_team'])} {curr_home} - {curr_away} {away(match['away_team'])}*"
-            f"  ·  _{stage_label(match['stage'])}_ _(AET)_"
+            f"  ·  _{stage_label(match['stage'])}_ _(Extra Time)_"
         )
 
         blocks = [
@@ -951,7 +951,7 @@ def send_shootout_notifications(slack_client):
             _block_divider(),
             _block_section(
                 f"*{home(match['home_team'])} {curr_home} - {curr_away} {away(match['away_team'])}*"
-                f"  ·  _{stage_label(match['stage'])}_ _(AET)_"
+                f"  ·  _{stage_label(match['stage'])}_ _(Extra Time)_"
             ),
         ]
 
@@ -1915,9 +1915,9 @@ def _advance_note(match, stage: str = "") -> str:
 
     duration = match["duration"] or "REGULAR"
     if duration == "PENALTY_SHOOTOUT":
-        how = " _(by pens)_"
+        how = " _(Penalties)_"
     elif duration == "EXTRA_TIME":
-        how = " _(aet)_"
+        how = " _(Extra Time)_"
     else:
         how = ""
 

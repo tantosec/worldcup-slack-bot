@@ -64,19 +64,19 @@ def format_score(match) -> str:
 
 
 def format_score_note(match) -> str:
-    """Return a score suffix: ' (pens)', ' (aet: 🇩🇪 2 - 1 🇵🇾)', or ''."""
+    """Return a score suffix: ' _(Penalties)_', ' _(Extra Time: 🇩🇪 2 - 1 🇵🇾)_', or ''."""
     from app.flags import flag as _flag
     dur = match["duration"] if hasattr(match, "keys") else match.get("duration", "REGULAR")
     if dur == "PENALTY_SHOOTOUT":
-        return " (pens)"
+        return " _(Penalties)_"
     if dur == "EXTRA_TIME":
         h_aet = match["home_score"]
         a_aet = match["away_score"]
         home_team = _safe_get(match, "home_team")
         away_team = _safe_get(match, "away_team")
         if home_team and away_team and h_aet is not None:
-            return f" (AET: {_flag(home_team)} {h_aet} - {a_aet} {_flag(away_team)})"
-        return " (AET)"
+            return f" _(Extra Time: {_flag(home_team)} {h_aet} - {a_aet} {_flag(away_team)})_"
+        return " _(Extra Time)_"
     return ""
 
 
