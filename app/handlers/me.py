@@ -79,7 +79,7 @@ def _divider() -> dict:
 
 def _date_group_key(kickoff_utc: str, phase_key: str, stage: str) -> str:
     dt = datetime.fromisoformat(kickoff_utc.replace("Z", "+00:00"))
-    label = f"{dt.day} {dt.strftime('%b')}"
+    label = f"{dt.day} {dt.strftime('%b %Y')}"
     if phase_key == "FINALS":
         label += " · Final" if stage == "FINAL" else " · 3rd Place"
     return label
@@ -128,7 +128,7 @@ def _phase_preds_blocks(preds, phase_key: str) -> list[dict]:
 
     blocks = []
     for date_key in date_order:
-        blocks.append(_context(f"── {date_key} ──"))
+        blocks.append(_context(f"─────────────────  {date_key}  ─────────────────"))
         for p in by_date[date_key]:
             pts = p["points"] or 0
             pred_flags = f"{flag(p['home_team'])} {p['pred_home']}-{p['pred_away']} {flag(p['away_team'])}"
