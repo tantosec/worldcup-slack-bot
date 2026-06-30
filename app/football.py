@@ -5,6 +5,18 @@ from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
+
+def _safe_get(match, *keys):
+    """Try multiple keys on a match dict/Row, return first non-None value or None."""
+    for key in keys:
+        try:
+            val = match[key]
+            if val is not None:
+                return val
+        except (KeyError, IndexError, TypeError):
+            pass
+    return None
+
 STAGE_LABELS: dict[str, str] = {
     "GROUP_STAGE":    "Group Stage",
     "LAST_32":        "Round of 32",
@@ -21,7 +33,12 @@ def stage_label(stage: str) -> str:
 
 
 def format_score(match) -> str:
-    """Return the bare score string: '2 - 1' or '1 (4) - (3) 1' for penalties."""
+    """Return the bare score string.
+
+    REGULAR/HALFTIME: '2 - 1'
+    PENALTY_SHOOTOUT: '(3) 1 - 1 (4)'  (pen scores wrap the tied 90min/AET score)
+    EXTRA_TIME: '1 - 1'  (90-minute score; AET score goes in format_score_note)
+    """
     h = match["home_score"]
     a = match["away_score"]
     dur = match["duration"] if hasattr(match, "keys") else match.get("duration", "REGULAR")
@@ -37,27 +54,29 @@ def format_score(match) -> str:
         return f"{h} - {a}"
 
     if dur == "EXTRA_TIME":
+        h90 = _safe_get(match, "home_score_90", "act_home")
+        a90 = _safe_get(match, "away_score_90", "act_away")
+        if h90 is not None:
+            return f"{h90} - {a90}"
         return f"{h} - {a}"
 
     return f"{h} - {a}"
 
 
 def format_score_note(match) -> str:
-    """Return a suffix note like ' _(AET)_', or empty string.
-
-    For PENALTY_SHOOTOUT: returns empty when pen scores are shown inline
-    in format_score (i.e. penalties_home is set), otherwise ' _(pens)_'.
-    """
+    """Return a score suffix: ' (pens)', ' (aet: 🇩🇪 2 - 1 🇵🇾)', or ''."""
+    from app.flags import flag as _flag
     dur = match["duration"] if hasattr(match, "keys") else match.get("duration", "REGULAR")
     if dur == "PENALTY_SHOOTOUT":
-        try:
-            if match["penalties_home"] is not None:
-                return ""
-        except (KeyError, IndexError):
-            pass
-        return " _(pens)_"
+        return " (pens)"
     if dur == "EXTRA_TIME":
-        return " _(AET)_"
+        h_aet = match["home_score"]
+        a_aet = match["away_score"]
+        home_team = _safe_get(match, "home_team")
+        away_team = _safe_get(match, "away_team")
+        if home_team and away_team and h_aet is not None:
+            return f" (aet: {_flag(home_team)} {h_aet} - {a_aet} {_flag(away_team)})"
+        return " (aet)"
     return ""
 
 

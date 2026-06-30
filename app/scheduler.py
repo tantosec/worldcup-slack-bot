@@ -148,6 +148,19 @@ def score_finished_matches(slack_client=None):
             zebra_statuses = {t: db.team_knocked_out(conn, t) for t in zebra_teams}
 
         if slack_client:
+            # Fire ET/shootout notifications before the full-time result if they
+            # were missed during live play (e.g. bot restarted mid-match).
+            if match["duration"] in ("EXTRA_TIME", "PENALTY_SHOOTOUT"):
+                with db.db() as conn:
+                    row = conn.execute(
+                        "SELECT extra_time_notified, shootout_notified FROM matches WHERE id = ?",
+                        (match["id"],),
+                    ).fetchone()
+                if row and not row["extra_time_notified"]:
+                    send_extra_time_notifications(slack_client)
+                if row and match["duration"] == "PENALTY_SHOOTOUT" and not row["shootout_notified"]:
+                    send_shootout_notifications(slack_client)
+
             try:
                 _post_result_summary(slack_client, match, results, leaderboard, confirmed_semis, zebra_statuses)
                 logger.info("Posted result summary for match %s", match["id"])
@@ -193,8 +206,8 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None, c
         if match["duration"] in ("EXTRA_TIME", "PENALTY_SHOOTOUT"):
             h90, a90 = get_90min_scores(summary)
             if h90 is not None:
-                match["_reg_home"] = h90
-                match["_reg_away"] = a90
+                match["home_score_90"] = h90
+                match["away_score_90"] = a90
     except Exception as exc:
         logger.warning("Could not fetch ESPN stats for full-time: %s", exc)
 
@@ -208,7 +221,7 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None, c
         ft_label = "🏁  *FULL TIME*  _(AET)_"
 
     score_text = (
-        f"*{home(match['home_team'])} {format_score(match)} {away(match['away_team'])}*\n"
+        f"*{home(match['home_team'])} {format_score(match)} {away(match['away_team'])}{format_score_note(match)}*\n"
         f"{stage_label(match['stage'])}"
     )
 
@@ -218,10 +231,11 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None, c
         _block_section(score_text),
     ]
 
-    reg_home = match.get("_reg_home")
-    reg_away = match.get("_reg_away")
-    if reg_home is not None:
-        blocks.append(_block_context(f"_90 min: {reg_home} - {reg_away} · Predictions scored on 90-minute result_"))
+    if duration in ("EXTRA_TIME", "PENALTY_SHOOTOUT"):
+        h90 = match.get("home_score_90")
+        a90 = match.get("away_score_90")
+        if h90 is not None:
+            blocks.append(_block_context(f"_Predictions scored on 90-minute result ({h90} - {a90})_"))
 
     prob_line = format_prob_line(match)
     ud_line = format_underdog_line(match)

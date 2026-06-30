@@ -115,13 +115,25 @@ def _parse_event(event: dict) -> dict | None:
     status_obj = event.get("status", {})
     status_name = status_obj.get("type", {}).get("name", "STATUS_SCHEDULED")
     internal_status = _STATUS_MAP.get(status_name, "TIMED")
+    period = status_obj.get("period") or 0
 
-    # Duration — detect ET/pens before match ends
+    # Duration — detect ET/pens from status name first, then fall back to period number.
+    # Period 3/4 = extra time halves, period 5 = penalty shootout.
+    # The period fallback handles unknown status names ESPN may use during live ET/pens.
     duration = "REGULAR"
     if status_name in _PEN_STATUSES:
         duration = "PENALTY_SHOOTOUT"
     elif status_name in _ET_STATUSES:
         duration = "EXTRA_TIME"
+    elif period >= 5:
+        duration = "PENALTY_SHOOTOUT"
+    elif period >= 3:
+        duration = "EXTRA_TIME"
+
+    # If status name is unknown but period indicates live ET/pens, treat as IN_PLAY
+    if internal_status == "TIMED" and period >= 3:
+        internal_status = "IN_PLAY"
+        logger.warning("Unknown ESPN status %r at period %s — treating as IN_PLAY", status_name, period)
 
     season = event.get("season", {})
     stage = _STAGE_MAP.get(season.get("slug", "group-stage"), "GROUP_STAGE")
