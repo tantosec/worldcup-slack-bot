@@ -332,8 +332,17 @@ def handle_me(respond, body, client):
                 respond(response_type="ephemeral", text=":wave: You're not enrolled yet — use `/register` to join!")
             return
 
-    blocks, title = _build_me_blocks(target_id, caller_id, client)
-    respond(response_type="ephemeral", blocks=blocks, text=title)
+    try:
+        blocks, title = _build_me_blocks(target_id, caller_id, client)
+    except Exception:
+        logger.exception("_build_me_blocks crashed for user %s", target_id)
+        respond(response_type="ephemeral", text=":x: Something went wrong building your stats. Check logs.")
+        return
+    try:
+        respond(response_type="ephemeral", blocks=blocks, text=title)
+    except Exception:
+        logger.exception("respond() failed for /mystats: %d blocks", len(blocks))
+        respond(response_type="ephemeral", text=f":x: Failed to send response ({len(blocks)} blocks). Check logs.")
 
 
 # ── Upcoming predictions modal ─────────────────────────────────────────────────
