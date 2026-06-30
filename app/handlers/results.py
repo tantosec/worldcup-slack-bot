@@ -1,11 +1,12 @@
 import json
+import os
 
 from app import db
 from app.config import COMPETITION_NAME
 from app.espn import fetch_match_summary, get_goal_scorers, get_match_stats
 from app.flags import home, away, flag
 from app.football import format_kickoff, format_score, format_score_note, stage_label
-from app.odds import format_prob_line, format_underdog_line
+from app.odds import format_prob_line, format_underdog_line, get_underdog
 from app.scoring import points_label
 
 OPEN_RESULTS_MODAL_ACTION = "open_results_modal"
@@ -66,9 +67,43 @@ def _match_blocks(m, pred) -> list:
         pass
 
     if pred:
-        pts = points_label(pred["points"])
+        pred_home = pred["home_score"]
+        pred_away = pred["away_score"]
+        act_home = m["home_score_90"] if m["home_score_90"] is not None else m["home_score"]
+        act_away = m["away_score_90"] if m["away_score_90"] is not None else m["away_score"]
+        pts = pred["points"] or 0
+
+        if pred_home == act_home and pred_away == act_away:
+            result_icon = ":dart:"
+        elif pts > 0:
+            result_icon = ":white_check_mark:"
+        else:
+            result_icon = ":x:"
+
         pick_icon = ":robot_face:" if pred["is_auto"] else ":pencil:"
-        pick_text = f"{pick_icon} Your pick: *{pred['home_score']} - {pred['away_score']}*  →  *{pts}*"
+
+        upset = ""
+        underdog = get_underdog(m)
+        if underdog and pts > 0:
+            underdog_won = (
+                (underdog == m["home_team"] and m["home_score"] > m["away_score"]) or
+                (underdog == m["away_team"] and m["away_score"] > m["home_score"])
+            )
+            pred_underdog_wins = (
+                (underdog == m["home_team"] and pred_home > pred_away) or
+                (underdog == m["away_team"] and pred_away > pred_home)
+            )
+            if underdog_won and pred_underdog_wins:
+                upset = "  :zap:"
+
+        auto_note = ""
+        if pred["is_auto"] and pts > 0:
+            multiplier = float(os.getenv("AUTO_PICK_POINTS_MULTIPLIER", "0.75"))
+            penalty_pct = round((1 - multiplier) * 100)
+            auto_note = f" _(-{penalty_pct}%)_"
+
+        pts_str = points_label(pts)
+        pick_text = f"{result_icon}  {pick_icon} Your pick: *{pred_home} - {pred_away}*  →  *{pts_str}*{upset}{auto_note}"
     else:
         pick_text = ":zipper_mouth_face: _(no prediction)_"
     blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": pick_text}]})
