@@ -325,7 +325,6 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None, c
 
 
 def _dm_points_earned(slack_client, user_id: str, match, pred_home: int, pred_away: int, pts: int):
-    actual = format_score(match) + format_score_note(match)
     predicted = f"{pred_home} - {pred_away}"
     duration = match["duration"] or "REGULAR"
 
@@ -347,8 +346,6 @@ def _dm_points_earned(slack_client, user_id: str, match, pred_home: int, pred_aw
         extra_notes.append(f"×{mult} {stage_label(match['stage'])} multiplier")
     if duration == "PENALTY_SHOOTOUT":
         extra_notes.append("went to penalties")
-    elif duration == "EXTRA_TIME":
-        extra_notes.append("AET")
 
     with db.db() as conn:
         rank, total = db.get_user_rank_and_total(conn, user_id)
@@ -356,7 +353,7 @@ def _dm_points_earned(slack_client, user_id: str, match, pred_home: int, pred_aw
 
     blocks = [
         _block_section(
-            f"⚽  *{home(match['home_team'])} {actual} {away(match['away_team'])}*"
+            f"⚽  *{home(match['home_team'])} {format_score(match)} {away(match['away_team'])}{format_score_note(match)}*"
         ),
         _block_divider(),
         _block_section(f"{result_icon}  {result_text}"),
@@ -370,7 +367,7 @@ def _dm_points_earned(slack_client, user_id: str, match, pred_home: int, pred_aw
     try:
         slack_client.chat_postMessage(
             channel=user_id,
-            text=f"Full Time: {match['home_team']} {actual} {match['away_team']} — {points_label(pts)}",
+            text=f"Full Time: {match['home_team']} {format_score(match)}{format_score_note(match)} {match['away_team']} — {points_label(pts)}",
             blocks=blocks,
         )
     except Exception as exc:
@@ -481,45 +478,48 @@ def send_goal_notifications(slack_client):
             if ud_line:
                 blocks.append(_block_context(ud_line))
 
-            with db.db() as conn:
-                preds = db.get_match_predictions_all_users(conn, match["id"])
+            # Suppress "Scoring right now" during ET: final points use the 90-min result,
+        # not the live ET score, so this section would mislead rather than inform.
+            if match["duration"] != "EXTRA_TIME":
+                with db.db() as conn:
+                    preds = db.get_match_predictions_all_users(conn, match["id"])
 
-            scorers = []
-            for p in preds:
-                if p["home_score"] is None:
-                    continue
-                pts = calculate_points(
-                    p["home_score"], p["away_score"],
-                    curr_home, curr_away,
-                    match["home_team"], match["away_team"],
-                    match["stage"],
-                    match=match,
-                )
-                if pts > 0:
-                    exact = p["home_score"] == curr_home and p["away_score"] == curr_away
-                    icon = ":dart:" if exact else ":white_check_mark:"
-                    scorers.append((icon, p["slack_user_id"], p["home_score"], p["away_score"], pts, p["is_auto"]))
-
-            if scorers:
-                blocks.append(_block_divider())
-                blocks.append(_block_section("🔮  *Scoring right now*"))
-                sorted_scorers = sorted(scorers, key=lambda x: -x[4])
-                scorer_pairs = [
-                    (
-                        f"{icon}  <@{uid}>  `{ph} - {pa}`{'  :robot_face:' if is_auto else ''}",
-                        f"*+{points_label(pts)}*",
+                scorers = []
+                for p in preds:
+                    if p["home_score"] is None:
+                        continue
+                    pts = calculate_points(
+                        p["home_score"], p["away_score"],
+                        curr_home, curr_away,
+                        match["home_team"], match["away_team"],
+                        match["stage"],
+                        match=match,
                     )
-                    for icon, uid, ph, pa, pts, is_auto in sorted_scorers[:10]
-                ]
-                blocks.extend(_block_fields(scorer_pairs))
-                if len(sorted_scorers) > 10:
-                    blocks.append(_block_context(f"_...and {len(sorted_scorers) - 10} more scoring_"))
-                blocks.append(_block_actions([{
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "See all picks →", "emoji": True},
-                    "action_id": "open_live_picks_modal",
-                    "value": str(match["id"]),
-                }]))
+                    if pts > 0:
+                        exact = p["home_score"] == curr_home and p["away_score"] == curr_away
+                        icon = ":dart:" if exact else ":white_check_mark:"
+                        scorers.append((icon, p["slack_user_id"], p["home_score"], p["away_score"], pts, p["is_auto"]))
+
+                if scorers:
+                    blocks.append(_block_divider())
+                    blocks.append(_block_section("🔮  *Scoring right now*"))
+                    sorted_scorers = sorted(scorers, key=lambda x: -x[4])
+                    scorer_pairs = [
+                        (
+                            f"{icon}  <@{uid}>  `{ph} - {pa}`{'  :robot_face:' if is_auto else ''}",
+                            f"*+{points_label(pts)}*",
+                        )
+                        for icon, uid, ph, pa, pts, is_auto in sorted_scorers[:10]
+                    ]
+                    blocks.extend(_block_fields(scorer_pairs))
+                    if len(sorted_scorers) > 10:
+                        blocks.append(_block_context(f"_...and {len(sorted_scorers) - 10} more scoring_"))
+                    blocks.append(_block_actions([{
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "See all picks →", "emoji": True},
+                        "action_id": "open_live_picks_modal",
+                        "value": str(match["id"]),
+                    }]))
 
             try:
                 _post_attachment(
@@ -1160,7 +1160,7 @@ def send_matchday_wrap(slack_client):
         )
 
         results_text = "\n".join(
-            f"{home(m['home_team'])} *{m['home_score']} - {m['away_score']}* {away(m['away_team'])}"
+            f"{home(m['home_team'])} *{format_score(m)}* {away(m['away_team'])}{format_score_note(m)}"
             for m in matches
         )
 

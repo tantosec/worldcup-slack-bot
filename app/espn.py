@@ -15,17 +15,23 @@ _MATCHDAY_RANGES = [
 ]
 
 _STATUS_MAP = {
-    "STATUS_SCHEDULED":   "TIMED",
-    "STATUS_FIRST_HALF":  "IN_PLAY",
-    "STATUS_SECOND_HALF": "IN_PLAY",
-    "STATUS_HALFTIME":    "HALFTIME",
-    "STATUS_FULL_TIME":   "FINISHED",
-    "STATUS_EXTRA_TIME":  "IN_PLAY",
-    "STATUS_PENALTIES":   "IN_PLAY",
-    "STATUS_FINAL_AET":   "FINISHED",
-    "STATUS_FINAL_PEN":   "FINISHED",
-    "STATUS_POSTPONED":   "POSTPONED",
-    "STATUS_CANCELLED":   "CANCELLED",
+    "STATUS_SCHEDULED":        "TIMED",
+    "STATUS_FIRST_HALF":       "IN_PLAY",
+    "STATUS_SECOND_HALF":      "IN_PLAY",
+    "STATUS_HALFTIME":         "HALFTIME",
+    "STATUS_FULL_TIME":        "FINISHED",
+    "STATUS_EXTRA_TIME":       "IN_PLAY",
+    "STATUS_PENALTIES":        "IN_PLAY",
+    "STATUS_FINAL_AET":        "FINISHED",
+    "STATUS_FINAL_PEN":        "FINISHED",
+    "STATUS_POSTPONED":        "POSTPONED",
+    "STATUS_CANCELLED":        "CANCELLED",
+    # Confirmed from live logs during Netherlands vs Morocco ET+pens:
+    "STATUS_OVERTIME":         "IN_PLAY",   # ET first/second half play
+    "STATUS_IN_PROGRESS":      "IN_PLAY",   # Generic in-progress (seen during ET)
+    "STATUS_HALFTIME_ET":      "HALFTIME",  # ET halftime interval
+    "STATUS_END_OF_EXTRATIME": "IN_PLAY",   # Break between ET end and pens start
+    "STATUS_SHOOTOUT":         "IN_PLAY",   # Live penalty shootout
 }
 
 _STAGE_MAP = {
@@ -39,8 +45,12 @@ _STAGE_MAP = {
 }
 
 # Detect ET/pens from status name (live and finished variants)
-_ET_STATUSES = {"STATUS_EXTRA_TIME", "STATUS_FINAL_AET"}
-_PEN_STATUSES = {"STATUS_PENALTIES", "STATUS_FINAL_PEN"}
+_ET_STATUSES = {
+    "STATUS_EXTRA_TIME", "STATUS_FINAL_AET",
+    "STATUS_OVERTIME", "STATUS_HALFTIME_ET", "STATUS_END_OF_EXTRATIME",
+    # STATUS_IN_PROGRESS excluded — may appear during regular play too; period fallback handles it
+}
+_PEN_STATUSES = {"STATUS_PENALTIES", "STATUS_FINAL_PEN", "STATUS_SHOOTOUT"}
 
 
 def _get(path: str, params: dict | None = None) -> dict:

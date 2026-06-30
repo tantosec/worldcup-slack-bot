@@ -75,8 +75,8 @@ def format_score_note(match) -> str:
         home_team = _safe_get(match, "home_team")
         away_team = _safe_get(match, "away_team")
         if home_team and away_team and h_aet is not None:
-            return f" (aet: {_flag(home_team)} {h_aet} - {a_aet} {_flag(away_team)})"
-        return " (aet)"
+            return f" (AET: {_flag(home_team)} {h_aet} - {a_aet} {_flag(away_team)})"
+        return " (AET)"
     return ""
 
 
