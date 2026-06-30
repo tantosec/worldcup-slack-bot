@@ -128,7 +128,7 @@ def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]
 
         for stage, stage_preds in by_stage.items():
             blocks.append(_context(f"*{stage_label(stage)}*"))
-            pairs = []
+            lines = []
             for p in stage_preds:
                 pts = p["points"] or 0
                 pred_str = f"{p['pred_home']} - {p['pred_away']}"
@@ -157,15 +157,14 @@ def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]
                         if underdog_won and pred_underdog_wins:
                             upset_flag = "  :zap:"
 
-                pairs.append((
-                    f"{icon}  {home(p['home_team'])} {format_score(p)} {away(p['away_team'])}{format_score_note(p)}",
-                    f"`{pred_str}`  *+{pts} pts*{upset_flag}",
-                ))
+                lines.append(
+                    f"{icon}  {home(p['home_team'])} {format_score(p)} {away(p['away_team'])}{format_score_note(p)}"
+                    f"  ·  Predicted: `{pred_str}`  *+{pts} pts*{upset_flag}"
+                )
 
-            for i in range(0, len(pairs), 10):
-                chunk = pairs[i:i + 10]
-                text = "\n".join(f"{left}   {right}" for left, right in chunk)
-                blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": text}})
+            for i in range(0, len(lines), 10):
+                chunk = lines[i:i + 10]
+                blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(chunk)}})
     else:
         blocks.append(_context("_No finished matches predicted yet._"))
 
