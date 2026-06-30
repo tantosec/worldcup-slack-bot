@@ -345,7 +345,7 @@ def _dm_points_earned(slack_client, user_id: str, match, pred_home: int, pred_aw
         mult = _stage_multiplier_label(match["stage"])
         extra_notes.append(f"×{mult} {stage_label(match['stage'])} multiplier")
     if duration == "PENALTY_SHOOTOUT":
-        extra_notes.append("went to penalties")
+        extra_notes.append("Penalties")
 
     with db.db() as conn:
         rank, total = db.get_user_rank_and_total(conn, user_id)
@@ -788,7 +788,7 @@ def send_et_halftime_notifications(slack_client):
         )
 
         blocks = [
-            _block_section(":stopwatch:  *ET HALF TIME*"),
+            _block_section(":stopwatch:  *EXTRA TIME — HALF TIME*"),
             _block_divider(),
             _block_section(score_text),
         ]
@@ -864,7 +864,7 @@ def send_et_halftime_notifications(slack_client):
         try:
             _post_attachment(
                 slack_client, channel,
-                f"ET Half Time: {match['home_team']} {curr_home} - {curr_away} {match['away_team']}",
+                f"Extra Time — Half Time: {match['home_team']} {curr_home} - {curr_away} {match['away_team']}",
                 "#7b1fa2", blocks,
             )
             with db.db() as conn:
@@ -922,7 +922,7 @@ def send_et_second_half_notifications(slack_client):
         try:
             _post_attachment(
                 slack_client, channel,
-                f"ET Second Half: {match['home_team']} {curr_home} - {curr_away} {match['away_team']}",
+                f"Extra Time — Second Half: {match['home_team']} {curr_home} - {curr_away} {match['away_team']}",
                 "#7b1fa2", blocks,
             )
             with db.db() as conn:
@@ -1746,18 +1746,6 @@ def _team_furthest_stage(matches) -> str | None:
     if best == "FINAL" and won_final:
         return "WINNER"
     return best if best in ZEBRA_POINTS or best == "FINAL" else None
-
-
-def _team_won_wrap_stage(team_name: str, wrap_stage: str, matches) -> bool:
-    """True if the team won their match at wrap_stage (i.e. still alive going into the next round)."""
-    for m in matches:
-        if m["stage"] != wrap_stage:
-            continue
-        if m["home_team"] == team_name and m["winner"] == "HOME_TEAM":
-            return True
-        if m["away_team"] == team_name and m["winner"] == "AWAY_TEAM":
-            return True
-    return False
 
 
 def _team_won_wrap_stage(team_name: str, wrap_stage: str, matches) -> bool:

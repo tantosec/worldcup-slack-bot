@@ -128,7 +128,7 @@ def open_picks_modal(client, trigger_id: str, slack_user_id: str, response_url: 
         "type": "input",
         "block_id": "block_scorer",
         "label": {"type": "plain_text", "text": ":athletic_shoe: Golden Boot (top scorer)"},
-        "hint": {"type": "plain_text", "text": "Start typing a player's name to search all 1,249 WC squad players."},
+        "hint": {"type": "plain_text", "text": "Start typing a player's name to search all 1,248 WC squad players."},
         "element": {
             "type": "external_select",
             "action_id": SCORER_ACTION,

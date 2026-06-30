@@ -8,6 +8,7 @@ from app.flags import flag, home, away, vs
 from app.football import format_score, format_score_note, format_kickoff, stage_label
 from app.odds import format_prob_line, format_underdog_line, get_underdog
 from app.scoring import TOURNAMENT_PICK_POINTS, SEMI_PICK_POINTS
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -131,12 +132,18 @@ def _phase_preds_blocks(preds, phase_key: str) -> list[dict]:
         blocks.append(_context(f"─────────────────  {date_key}  ─────────────────"))
         for p in by_date[date_key]:
             pts = p["points"] or 0
-            pred_flags = f"{flag(p['home_team'])} {p['pred_home']}-{p['pred_away']} {flag(p['away_team'])}"
+            pred_flags = f"{flag(p['home_team'])} {p['pred_home']} - {p['pred_away']} {flag(p['away_team'])}"
+            pred_icon = ":robot_face:" if p["is_auto"] else ":pencil:"
+            auto_note = ""
+            if p["is_auto"] and pts > 0:
+                multiplier = float(os.getenv("AUTO_PICK_POINTS_MULTIPLIER", "0.75"))
+                penalty_pct = round((1 - multiplier) * 100)
+                auto_note = f" _(-{penalty_pct}%)_"
             blocks.append(_section(
                 f"{_pred_icon(p)}  {home(p['home_team'])} {format_score(p)} "
                 f"{away(p['away_team'])}{format_score_note(p)}"
             ))
-            blocks.append(_context(f"*:pencil: Predicted:  {pred_flags}   →   +{pts} pts{_upset_flag(p)}*"))
+            blocks.append(_context(f"*{pred_icon} Predicted:  {pred_flags}   →   +{pts} pts{_upset_flag(p)}*{auto_note}"))
 
     return blocks
 
