@@ -28,12 +28,20 @@ GENDER_MAP = {
 # FIFA uses different official names than ESPN's displayName.
 # Keys are FIFA names, values are ESPN displayNames.
 FIFA_TO_ESPN: dict[str, str] = {
-    "IR Iran":               "Iran",
-    "Korea Republic":        "South Korea",
-    "USA":                   "United States",
-    "Côte d'Ivoire":         "Ivory Coast",
-    "Bosnia and Herzegovina":"Bosnia-Herzegovina",
-    "Cabo Verde":            "Cape Verde",
+    "IR Iran":                    "Iran",
+    "Korea Republic":             "South Korea",
+    "USA":                        "United States",
+    "Côte d'Ivoire":              "Ivory Coast",
+    "Bosnia and Herzegovina":     "Bosnia-Herzegovina",
+    "Cabo Verde":                 "Cape Verde",
+    "China PR":                   "China",
+    "The Gambia":                 "Gambia",
+    "Hong Kong, China":           "Hong Kong",
+    "DPR Korea":                  "North Korea",
+    "São Tomé and Príncipe":      "Sao Tome and Principe",
+    "St Kitts and Nevis":         "St. Kitts and Nevis",
+    "St Lucia":                   "St. Lucia",
+    "St Vincent and the Grenadines": "St. Vincent and the Grenadines",
 }
 
 

@@ -1,53 +1,9 @@
-FLAGS: dict[str, str] = {
-    "Algeria": ":flag-dz:",
-    "Argentina": ":flag-ar:",
-    "Australia": ":flag-au:",
-    "Austria": ":flag-at:",
-    "Belgium": ":flag-be:",
-    "Bosnia-Herzegovina": ":flag-ba:",
-    "Brazil": ":flag-br:",
-    "Canada": ":flag-ca:",
-    "Cape Verde": ":flag-cv:",
-    "Colombia": ":flag-co:",
-    "Congo DR": ":flag-cd:",
-    "Croatia": ":flag-hr:",
-    "Curaçao": ":flag-cw:",
-    "Czechia": ":flag-cz:",
-    "Ecuador": ":flag-ec:",
-    "Egypt": ":flag-eg:",
-    "England": ":flag-england:",
-    "France": ":flag-fr:",
-    "Germany": ":flag-de:",
-    "Ghana": ":flag-gh:",
-    "Haiti": ":flag-ht:",
-    "Iran": ":flag-ir:",
-    "Iraq": ":flag-iq:",
-    "Ivory Coast": ":flag-ci:",
-    "Japan": ":flag-jp:",
-    "Jordan": ":flag-jo:",
-    "Mexico": ":flag-mx:",
-    "Morocco": ":flag-ma:",
-    "Netherlands": ":flag-nl:",
-    "New Zealand": ":flag-nz:",
-    "Norway": ":flag-no:",
-    "Panama": ":flag-pa:",
-    "Paraguay": ":flag-py:",
-    "Portugal": ":flag-pt:",
-    "Qatar": ":flag-qa:",
-    "Saudi Arabia": ":flag-sa:",
-    "Scotland": ":flag-scotland:",
-    "Senegal": ":flag-sn:",
-    "South Africa": ":flag-za:",
-    "South Korea": ":flag-kr:",
-    "Spain": ":flag-es:",
-    "Sweden": ":flag-se:",
-    "Switzerland": ":flag-ch:",
-    "Tunisia": ":flag-tn:",
-    "Türkiye": ":flag-tr:",
-    "United States": ":flag-us:",
-    "Uruguay": ":flag-uy:",
-    "Uzbekistan": ":flag-uz:",
-}
+import json
+from pathlib import Path
+
+FLAGS: dict[str, str] = json.loads(
+    (Path(__file__).parent / "data" / "flags.json").read_text(encoding="utf-8")
+)
 
 
 def flag(team_name: str) -> str:
