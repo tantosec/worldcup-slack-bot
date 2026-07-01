@@ -1,4 +1,5 @@
 import logging
+import time
 import os
 from datetime import timezone
 from zoneinfo import ZoneInfo
@@ -459,10 +460,23 @@ def send_goal_notifications(slack_client):
 
             scorer_lines = []
             team_goals = [g for g in all_goals if g["team_name"] == team_name]
-            for g in team_goals[-delta:]:
-                scorer_lines.append(
-                    f"{flag(team_name)}  :soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}"
-                )
+            expected_total = curr_home if team_name == match["home_team"] else curr_away
+            # ESPN scoreboard updates before keyEvents — retry until summary catches up or we give up.
+            if len(team_goals) < expected_total:
+                for _ in range(5):
+                    time.sleep(2)
+                    try:
+                        retry_summary = fetch_match_summary(match["external_id"])
+                        team_goals = [g for g in get_goal_scorers(retry_summary) if g["team_name"] == team_name]
+                        if len(team_goals) >= expected_total:
+                            break
+                    except Exception:
+                        pass
+            if len(team_goals) >= expected_total:
+                for g in team_goals[-delta:]:
+                    scorer_lines.append(
+                        f"{flag(team_name)}  :soccer: *{g['scorer_name']}* {g['minute']}'{g['suffix']}"
+                    )
 
             if delta == 1:
                 header_text = f":soccer:  *GOOOOOOOAAAALLLLL!*\n{flag(team_name)} {team_name} scores!"
