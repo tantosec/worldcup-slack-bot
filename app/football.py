@@ -62,11 +62,14 @@ def format_score_note(match) -> str:
     if dur == "PENALTY_SHOOTOUT":
         return " _(Penalties)_"
     if dur == "EXTRA_TIME":
+        h90 = _safe_get(match, "home_score_90", "act_home")
         h_aet = match["home_score"]
         a_aet = match["away_score"]
         home_team = _safe_get(match, "home_team")
         away_team = _safe_get(match, "away_team")
-        if home_team and away_team and h_aet is not None:
+        # Only show the ET final score in the note when we also have the 90-min score to
+        # show in the main display — otherwise both would show the same score redundantly.
+        if h90 is not None and home_team and away_team and h_aet is not None:
             return f" _(Extra Time: {_flag(home_team)} {h_aet} - {a_aet} {_flag(away_team)})_"
         return " _(Extra Time)_"
     return ""

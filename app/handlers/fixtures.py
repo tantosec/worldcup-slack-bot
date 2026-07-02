@@ -1,4 +1,5 @@
 import json
+import os
 
 from app import db
 from app.config import COMPETITION_NAME
@@ -73,6 +74,8 @@ def _live_picks_split(match, preds: list) -> tuple:
                 match["stage"],
                 match=dict(match),
             )
+            if r["is_auto"]:
+                pts = int(pts * float(os.getenv("AUTO_PICK_POINTS_MULTIPLIER", "0.75")))
             entry = (r["slack_user_id"], r["home_score"], r["away_score"], r["is_auto"], pts)
             if pts > 0:
                 scoring_now.append(entry)

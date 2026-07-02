@@ -515,6 +515,8 @@ def send_goal_notifications(slack_client):
                         match["stage"],
                         match=match,
                     )
+                    if p["is_auto"]:
+                        pts = int(pts * _auto_pick_multiplier())
                     if pts > 0:
                         exact = p["home_score"] == curr_home and p["away_score"] == curr_away
                         icon = ":dart:" if exact else ":white_check_mark:"
@@ -633,6 +635,8 @@ def send_halftime_notifications(slack_client):
                 match["stage"],
                 match=match,
             )
+            if p["is_auto"]:
+                pts = int(pts * _auto_pick_multiplier())
             if pts > 0:
                 exact = p["home_score"] == curr_home and p["away_score"] == curr_away
                 icon = ":dart:" if exact else ":white_check_mark:"
@@ -855,6 +859,8 @@ def send_et_halftime_notifications(slack_client):
                 match["stage"],
                 match=match,
             )
+            if p["is_auto"]:
+                pts = int(pts * _auto_pick_multiplier())
             if pts > 0:
                 exact = p["home_score"] == curr_home and p["away_score"] == curr_away
                 icon = ":dart:" if exact else ":white_check_mark:"
