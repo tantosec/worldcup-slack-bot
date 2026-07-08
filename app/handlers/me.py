@@ -310,7 +310,7 @@ def handle_me(respond, body, client):
         blocks, title = _build_me_blocks(target_id, caller_id, client)
         logger.info("/mystats: %d blocks for user %s", len(blocks), target_id)
         resp = respond(response_type="ephemeral", blocks=blocks, text=title)
-        logger.info("/mystats respond result: %s", resp)
+        logger.info("/mystats respond status=%s body=%r", getattr(resp, "status_code", "?"), getattr(resp, "body", "?"))
     except Exception as exc:
         logger.exception("/mystats failed for user %s: %s", target_id, exc)
         respond(response_type="ephemeral", text=f":warning: Something went wrong loading your stats. ({type(exc).__name__}: {exc})")
