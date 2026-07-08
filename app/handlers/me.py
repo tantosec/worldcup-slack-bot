@@ -233,7 +233,7 @@ def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]
                 blocks.append({"type": "actions", "elements": [{
                     "type": "button",
                     "text": {"type": "plain_text", "text": f"📋 See all {len(current_preds)} {phase_label} predictions →", "emoji": True},
-                    "action_id": OPEN_PHASE_MODAL_ACTION,
+                    "action_id": f"{OPEN_PHASE_MODAL_ACTION}_{current_pk}",
                     "value": json.dumps({"target_id": target_id, "phase_key": current_pk, "page": 0}),
                 }]})
         else:
@@ -249,7 +249,7 @@ def _build_me_blocks(target_id: str, caller_id: str, client) -> tuple[list, str]
                 past_buttons.append({
                     "type": "button",
                     "text": {"type": "plain_text", "text": PHASE_BUTTON_TEXT[pk], "emoji": True},
-                    "action_id": OPEN_PHASE_MODAL_ACTION,
+                    "action_id": f"{OPEN_PHASE_MODAL_ACTION}_{pk}",
                     "value": json.dumps({"target_id": target_id, "phase_key": pk, "page": 0}),
                 })
         if past_buttons:
@@ -306,28 +306,8 @@ def handle_me(respond, body, client):
                 respond(response_type="ephemeral", text=":wave: You're not enrolled yet — use `/register` to join!")
             return
 
-    try:
-        blocks, title = _build_me_blocks(target_id, caller_id, client)
-        logger.info("/mystats: %d blocks for user %s", len(blocks), target_id)
-        # DEBUG: bisect which block is invalid by growing prefix
-        lo, hi = 1, len(blocks)
-        bad = None
-        while lo <= hi:
-            mid = (lo + hi) // 2
-            r = respond(response_type="ephemeral", blocks=blocks[:mid], text=title)
-            status = getattr(r, "status_code", "?")
-            body_txt = getattr(r, "body", "?")
-            logger.info("/mystats bisect prefix=%d status=%s body=%r", mid, status, body_txt)
-            if body_txt == "invalid_blocks" or status == 500:
-                bad = mid
-                hi = mid - 1
-            else:
-                lo = mid + 1
-        logger.info("/mystats bisect: smallest failing prefix=%s → block[%s]=%s", bad, (bad - 1) if bad else None,
-                    json.dumps(blocks[bad - 1], ensure_ascii=False) if bad else None)
-    except Exception as exc:
-        logger.exception("/mystats failed for user %s: %s", target_id, exc)
-        respond(response_type="ephemeral", text=f":warning: Something went wrong loading your stats. ({type(exc).__name__}: {exc})")
+    blocks, title = _build_me_blocks(target_id, caller_id, client)
+    respond(response_type="ephemeral", blocks=blocks, text=title)
 
 
 # ── Upcoming predictions modal ─────────────────────────────────────────────────

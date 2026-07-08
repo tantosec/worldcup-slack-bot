@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -249,7 +250,10 @@ def action_mystats_modal_next(ack, body, client):
     handle_mystats_modal_nav(ack, body, client)
 
 
-@app.action(OPEN_PHASE_MODAL_ACTION)
+# action_id is suffixed with the phase key (e.g. open_phase_modal_LAST_32) so that
+# multiple phase buttons can coexist in one actions block (Slack requires action_id
+# to be unique within a block). Match them all with a prefix regex.
+@app.action(re.compile(rf"^{re.escape(OPEN_PHASE_MODAL_ACTION)}"))
 def action_open_phase_modal(ack, body, client):
     handle_open_phase_modal(ack, body, client)
 
