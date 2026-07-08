@@ -312,8 +312,8 @@ def handle_me(respond, body, client):
         try:
             client.chat_postEphemeral(channel=body["channel_id"], user=caller_id, blocks=blocks, text=title)
         except Exception as api_exc:
-            meta = getattr(getattr(api_exc, "response", None), "data", {})
-            logger.error("/mystats chat_postEphemeral error=%s metadata=%s", api_exc, meta.get("response_metadata"))
+            data = getattr(getattr(api_exc, "response", None), "data", None)
+            logger.error("/mystats chat_postEphemeral error=%s data=%s", api_exc, json.dumps(data, ensure_ascii=False) if data else data)
     except Exception as exc:
         logger.exception("/mystats failed for user %s: %s", target_id, exc)
         respond(response_type="ephemeral", text=f":warning: Something went wrong loading your stats. ({type(exc).__name__}: {exc})")
