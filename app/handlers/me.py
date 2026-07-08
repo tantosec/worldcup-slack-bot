@@ -309,11 +309,22 @@ def handle_me(respond, body, client):
     try:
         blocks, title = _build_me_blocks(target_id, caller_id, client)
         logger.info("/mystats: %d blocks for user %s", len(blocks), target_id)
-        try:
-            client.chat_postEphemeral(channel=body["channel_id"], user=caller_id, blocks=blocks, text=title)
-        except Exception as api_exc:
-            data = getattr(getattr(api_exc, "response", None), "data", None)
-            logger.error("/mystats chat_postEphemeral error=%s data=%s", api_exc, json.dumps(data, ensure_ascii=False) if data else data)
+        # DEBUG: bisect which block is invalid by growing prefix
+        lo, hi = 1, len(blocks)
+        bad = None
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            r = respond(response_type="ephemeral", blocks=blocks[:mid], text=title)
+            status = getattr(r, "status_code", "?")
+            body_txt = getattr(r, "body", "?")
+            logger.info("/mystats bisect prefix=%d status=%s body=%r", mid, status, body_txt)
+            if body_txt == "invalid_blocks" or status == 500:
+                bad = mid
+                hi = mid - 1
+            else:
+                lo = mid + 1
+        logger.info("/mystats bisect: smallest failing prefix=%s → block[%s]=%s", bad, (bad - 1) if bad else None,
+                    json.dumps(blocks[bad - 1], ensure_ascii=False) if bad else None)
     except Exception as exc:
         logger.exception("/mystats failed for user %s: %s", target_id, exc)
         respond(response_type="ephemeral", text=f":warning: Something went wrong loading your stats. ({type(exc).__name__}: {exc})")
