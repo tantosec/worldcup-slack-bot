@@ -1,3 +1,5 @@
+import os
+
 from app.fifa_rankings import get_rank
 from app.odds import get_underdog
 from app.config import (
@@ -102,3 +104,16 @@ def points_label(points: int | None) -> str:
     if points >= 9:
         return f"{points} pts :white_check_mark:"
     return f"{points} pts"
+
+
+def auto_pick_suffix(is_auto, points: int | None) -> str:
+    """Trailing suffix for auto (robot) picks, always ending the line so the
+    robot icon is the last icon shown: ' :robot_face: _(-25%)_' when points were
+    earned, or just ' :robot_face:' otherwise. Empty string for manual picks."""
+    if not is_auto:
+        return ""
+    if points and points > 0:
+        multiplier = float(os.getenv("AUTO_PICK_POINTS_MULTIPLIER", "0.75"))
+        penalty_pct = round((1 - multiplier) * 100)
+        return f" :robot_face: _(-{penalty_pct}%)_"
+    return " :robot_face:"

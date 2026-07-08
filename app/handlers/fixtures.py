@@ -7,7 +7,7 @@ from app.espn import fetch_match_summary, get_goal_scorers, get_match_stats, get
 from app.flags import home, away, vs
 from app.football import format_kickoff, format_score, stage_label, estimate_match_time
 from app.odds import format_prob_line, format_underdog_line
-from app.scoring import calculate_points, points_label
+from app.scoring import calculate_points, points_label, auto_pick_suffix
 
 OPEN_FIXTURES_MODAL_ACTION = "open_fixtures_modal"
 FIXTURES_MODAL_PREV_ACTION = "fixtures_modal_prev"
@@ -335,7 +335,7 @@ def _build_result_picks_modal_view(match_id: int) -> dict:
         pairs = []
         for uid, h, a, is_auto, pts in scored:
             icon = ":dart:" if (h == act_h and a == act_a) else ":white_check_mark:"
-            score_str = f"{icon} `{h} - {a}`" + (" :robot_face:" if is_auto else "") + f"  _{points_label(pts)}_"
+            score_str = f"{icon} `{h} - {a}`  _{points_label(pts)}_" + auto_pick_suffix(is_auto, pts)
             pairs.append((f"<@{uid}>", score_str))
         blocks += _pairs_to_fields_blocks(pairs)
 
@@ -344,7 +344,7 @@ def _build_result_picks_modal_view(match_id: int) -> dict:
             blocks.append(_divider())
         blocks.append(_section("❌  *No points*"))
         pairs = [
-            (f"<@{uid}>", f"`{h} - {a}`" + (" :robot_face:" if is_auto else ""))
+            (f"<@{uid}>", f"`{h} - {a}`" + auto_pick_suffix(is_auto, pts))
             for uid, h, a, is_auto, pts in no_pts
         ]
         blocks += _pairs_to_fields_blocks(pairs)

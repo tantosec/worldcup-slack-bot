@@ -13,7 +13,7 @@ from app.espn import (
 )
 from app.football import format_kickoff, format_score, format_score_note, stage_label, estimate_match_time
 from app.odds import fetch_and_store_odds, sync_odds_if_stale, format_prob_line, format_underdog_line
-from app.scoring import calculate_points, points_label, score_semi_picks, score_group_goals
+from app.scoring import calculate_points, points_label, auto_pick_suffix, score_semi_picks, score_group_goals
 from app.autopick import (
     get_or_generate_auto_match_pick, get_or_generate_auto_tournament_picks,
     apply_auto_picks_for_match, apply_auto_tournament_picks,
@@ -292,10 +292,9 @@ def _post_result_summary(slack_client, match, results: list, leaderboard=None, c
             else:
                 icon = ":x:"
                 label = "Wrong"
-            auto_tag = ":robot_face: " if is_auto else ""
             pred_pairs.append((
-                f"{icon}  <@{user_id}>  `{pred_str}`  {auto_tag}{label}",
-                f"*{points_label(pts)}*",
+                f"{icon}  <@{user_id}>  `{pred_str}`  {label}",
+                f"*{points_label(pts)}*{auto_pick_suffix(is_auto, pts)}",
             ))
         blocks.extend(_block_fields(pred_pairs[:10]))
         if len(pred_pairs) > 10:
@@ -528,8 +527,8 @@ def send_goal_notifications(slack_client):
                     sorted_scorers = sorted(scorers, key=lambda x: -x[4])
                     scorer_pairs = [
                         (
-                            f"{icon}  <@{uid}>  `{ph} - {pa}`{'  :robot_face:' if is_auto else ''}",
-                            f"*+{points_label(pts)}*",
+                            f"{icon}  <@{uid}>  `{ph} - {pa}`",
+                            f"*+{points_label(pts)}*{auto_pick_suffix(is_auto, pts)}",
                         )
                         for icon, uid, ph, pa, pts, is_auto in sorted_scorers[:10]
                     ]
@@ -648,8 +647,8 @@ def send_halftime_notifications(slack_client):
             sorted_scorers = sorted(scorers, key=lambda x: -x[4])
             scorer_pairs = [
                 (
-                    f"{icon}  <@{uid}>  `{ph} - {pa}`{'  :robot_face:' if is_auto else ''}",
-                    f"*+{points_label(pts)}*",
+                    f"{icon}  <@{uid}>  `{ph} - {pa}`",
+                    f"*+{points_label(pts)}*{auto_pick_suffix(is_auto, pts)}",
                 )
                 for icon, uid, ph, pa, pts, is_auto in sorted_scorers[:10]
             ]
@@ -872,8 +871,8 @@ def send_et_halftime_notifications(slack_client):
             sorted_scorers = sorted(scorers, key=lambda x: -x[4])
             scorer_pairs = [
                 (
-                    f"{icon}  <@{uid}>  `{ph} - {pa}`{'  :robot_face:' if is_auto else ''}",
-                    f"*+{points_label(pts)}*",
+                    f"{icon}  <@{uid}>  `{ph} - {pa}`",
+                    f"*+{points_label(pts)}*{auto_pick_suffix(is_auto, pts)}",
                 )
                 for icon, uid, ph, pa, pts, is_auto in sorted_scorers[:10]
             ]

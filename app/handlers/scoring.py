@@ -4,10 +4,11 @@ from app.scoring import (
     GROUP_GOALS_WIN_POINTS, GROUP_GOALS_NEAR_POINTS,
     ZEBRA_POINTS, ZEBRA_WILDCARD_MULTIPLIER, ZEBRA_BOLD, ZEBRA_WILDCARD,
 )
-from app.config import COMPETITION_NAME, GROUP_STAGE_MATCH_COUNT
+from app.config import COMPETITION_NAME, GROUP_STAGE_MATCH_COUNT, UNDERDOG_RATIO
 
 _MAX_WILDCARD_WINNER = ZEBRA_POINTS["WINNER"] * ZEBRA_WILDCARD_MULTIPLIER
 _AUTO_PICK_PCT = int(float(os.getenv("AUTO_PICK_POINTS_MULTIPLIER", "0.75")) * 100)
+_UNDERDOG_PCT = round((UNDERDOG_RATIO - 1) * 100)
 
 
 def _lock_display() -> str:
@@ -50,7 +51,7 @@ SCORING_BLOCKS = [
         "elements": [{
             "type": "mrkdwn",
             "text": (
-                "*Underdog:* Bookmaker odds — favourite must be ≥25% more likely to win. "
+                f"*Underdog:* Bookmaker odds — favourite must be ≥{_UNDERDOG_PCT}% more likely to win. "
                 "Falls back to FIFA rankings when odds aren't available. "
                 "A draw does *not* trigger the bonus."
             ),
