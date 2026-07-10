@@ -93,16 +93,10 @@ def _upset_bonus(
 
 
 def points_label(points: int | None) -> str:
+    # No tier emoji (:white_check_mark:/:dart:/:fire:) — every scoring line already
+    # carries a result icon at the start, so a trailing one is redundant and noisy.
     if points is None:
         return "—"
-    if points == 0:
-        return "0 pts"
-    if points >= 27:
-        return f"{points} pts :fire:"
-    if points >= 18:
-        return f"{points} pts :dart:"
-    if points >= 9:
-        return f"{points} pts :white_check_mark:"
     return f"{points} pts"
 
 
