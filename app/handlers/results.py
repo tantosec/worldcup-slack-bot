@@ -84,9 +84,11 @@ def _match_blocks(m, pred) -> list:
         upset = ""
         underdog = get_underdog(m)
         if underdog and pts > 0:
+            # Upset bonus is scored on the 90-minute result, so compare with
+            # act_home/act_away (not the AET/penalty final) to match the points.
             underdog_won = (
-                (underdog == m["home_team"] and m["home_score"] > m["away_score"]) or
-                (underdog == m["away_team"] and m["away_score"] > m["home_score"])
+                (underdog == m["home_team"] and act_home > act_away) or
+                (underdog == m["away_team"] and act_away > act_home)
             )
             pred_underdog_wins = (
                 (underdog == m["home_team"] and pred_home > pred_away) or

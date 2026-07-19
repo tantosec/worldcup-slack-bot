@@ -68,9 +68,12 @@ def _upset_flag(p) -> str:
     underdog = get_underdog(p)
     if not underdog:
         return ""
+    # The upset bonus is scored on the 90-minute result (act_home/act_away), not
+    # the AET/penalty final — mirror that here so the icon matches the points.
+    act_home, act_away = p["act_home"], p["act_away"]
     underdog_won = (
-        (underdog == p["home_team"] and p["home_score"] > p["away_score"]) or
-        (underdog == p["away_team"] and p["away_score"] > p["home_score"])
+        (underdog == p["home_team"] and act_home > act_away) or
+        (underdog == p["away_team"] and act_away > act_home)
     )
     pred_underdog_wins = (
         (underdog == p["home_team"] and p["pred_home"] > p["pred_away"]) or

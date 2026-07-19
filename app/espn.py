@@ -32,13 +32,14 @@ _STATUS_MAP = {
 }
 
 _STAGE_MAP = {
-    "group-stage":   "GROUP_STAGE",
-    "round-of-32":   "LAST_32",
-    "round-of-16":   "LAST_16",
-    "quarterfinals": "QUARTER_FINALS",
-    "semifinals":    "SEMI_FINALS",
-    "3rd-place":     "THIRD_PLACE",
-    "final":         "FINAL",
+    "group-stage":     "GROUP_STAGE",
+    "round-of-32":     "LAST_32",
+    "round-of-16":     "LAST_16",
+    "quarterfinals":   "QUARTER_FINALS",
+    "semifinals":      "SEMI_FINALS",
+    "3rd-place":       "THIRD_PLACE",
+    "3rd-place-match": "THIRD_PLACE",  # ESPN's actual slug for the third-place playoff
+    "final":           "FINAL",
 }
 
 # Detect ET/pens from status name (live and finished variants)
@@ -133,7 +134,13 @@ def _parse_event(event: dict) -> dict | None:
         logger.warning("Unknown ESPN status %r at period %s — treating as IN_PLAY", status_name, period)
 
     season = event.get("season", {})
-    stage = _STAGE_MAP.get(season.get("slug", "group-stage"), "GROUP_STAGE")
+    _slug = season.get("slug", "group-stage")
+    stage = _STAGE_MAP.get(_slug)
+    if stage is None:
+        # Never silently bucket an unknown slug into GROUP_STAGE — that hid the
+        # "3rd-place-match" mis-tagging. Log it loudly so new slugs get mapped.
+        logger.warning("Unknown ESPN season slug %r — defaulting stage to GROUP_STAGE", _slug)
+        stage = "GROUP_STAGE"
 
     kickoff_utc = comp.get("startDate") or event.get("date", "")
 
@@ -318,15 +325,38 @@ def get_match_stats(summary: dict) -> dict | None:
     }
 
 
+_CORE_BASE = f"https://sports.core.api.espn.com/v2/sports/soccer/leagues/{ESPN_SLUG}"
+
+
 def fetch_top_scorer() -> str | None:
-    """Return the current golden boot leader's name from ESPN leaders endpoint."""
+    """Return the golden boot leader's name from ESPN's core leaders endpoint.
+
+    The site API's /leaders path 404s for fifa.world; the goals leaderboard lives
+    on the core API under seasons/<year>/types/<n>/leaders, where each leader's
+    athlete is a $ref that must be resolved to get the display name.
+    """
+    season = TOURNAMENT_END.year
     try:
-        data = _get("/leaders")
-        for cat in data.get("categories", []):
-            if "goal" in cat.get("name", "").lower():
-                leaders = cat.get("leaders", [])
-                if leaders:
-                    return leaders[0].get("athlete", {}).get("displayName")
+        for seasontype in (1, 2, 3, 4):
+            resp = requests.get(
+                f"{_CORE_BASE}/seasons/{season}/types/{seasontype}/leaders",
+                params={"lang": "en", "region": "us"}, timeout=10,
+            )
+            if resp.status_code != 200:
+                continue
+            cats = resp.json().get("categories", [])
+            cat = next((c for c in cats if c.get("name") in ("goals", "goalsLeaders")), None)
+            leaders = cat.get("leaders", []) if cat else []
+            if not leaders:
+                continue
+            ref = leaders[0].get("athlete", {}).get("$ref")
+            if not ref:
+                continue
+            ath = requests.get(ref, params={"lang": "en", "region": "us"}, timeout=10)
+            if ath.status_code == 200:
+                name = ath.json().get("displayName")
+                if name:
+                    return name
     except Exception as exc:
         logger.error("ESPN: failed to fetch top scorer: %s", exc)
     return None
