@@ -15,6 +15,7 @@ Competition identity (name, dates, phases, scoring constants) is driven by `app/
 - **Kickoff announcements** — all predictions revealed the moment a match kicks off, with venue and city
 - **Goal notifications** — live alert within ~10 seconds of every goal, with scorer name, minute, and current standings
 - **Halftime notifications** — halftime summary with scorers, possession/shots stats, and prediction standings
+- **Knockout live notifications** — second-half-underway, extra time, extra-time halftime, and penalty shootout alerts for knockout matches
 - **Win probabilities** — live betting odds shown in every match message (predict modal, reminders, kickoff, goals, results)
 - **Underdog detection** — automatically identifies the underdog using betting odds (favourite must be ≥1.25× more likely to win) with FIFA rankings as fallback
 - **Live fixtures** — `/fixtures` shows in-progress matches with current score and everyone's predictions
@@ -60,7 +61,7 @@ Players who forget to predict a match or miss the tournament picks deadline are 
 - **Tournament picks** — generated once at the ~1h tournament picks lock reminder. Applied to all players who haven't submitted when picks lock. Each player gets a DM with their full auto-generated picks.
 - **Fairness** — all players who missed the same match get the identical LLM-generated pick (one LLM call per match, not per player). Nobody gets a different result by accident.
 - **Points penalty** — auto-picked match predictions earn **75% of the points** a correct prediction would score (floor division, e.g. 9 pts → 6 pts). Configurable via `AUTO_PICK_POINTS_MULTIPLIER` (0.0–1.0 decimal, default `0.75`). Tournament picks auto-filled by the bot count for full points.
-- **Display** — auto-picks are labelled 🤖 in the kickoff message, `/mystats`, and `/picks`.
+- **Display** — auto-picks are labelled 🤖 everywhere they appear: the kickoff message, live scoring and result panels, `/results`, `/fixtures`, `/mystats`, and `/picks`.
 - **Fallback** — if the LLM fails all retries, an odds-based pick is used instead (favourite wins 1–0, or 0–0 for a draw). The 🤖 label still applies.
 
 ## Commands
@@ -301,6 +302,7 @@ Maps internal stage codes to display strings used in result messages and `/fixtu
 
 - Runs over Socket Mode — no public IP or open ports required, any machine with internet access works
 - SQLite database is persisted via Docker volume at `./data/worldcup.db` on the host; the `./data/` directory is created automatically by Docker Compose on first run
+- The database file path is set by the `DB_PATH` env var (Docker Compose sets it to `/app/data/worldcup.db`); running outside Docker without it falls back to `worldcup.db` in the working directory
 - Static data files (`config.json`, `flags.json`, `players.json`, `fifa_rankings.json`) are baked into the Docker image under `app/data/` — they are not in the volume mount and cannot be overwritten by the running container
 - Live score sync runs every `LIVE_POLL_INTERVAL` seconds (default 10s) — ESPN has no rate limits
 - Other jobs (scoring, kickoff announcements, reminders) run every `POLL_INTERVAL` seconds (default 60s)

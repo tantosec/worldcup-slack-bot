@@ -5,7 +5,7 @@ _metadata:
 display_information:
   name: WC 2026 Bot
   description: World Cup 2026 prediction league
-  long_description: "Compete with your teammates to predict match scores throughout the entire FIFA World Cup 2026. Earn points for correct results, exact scores, and calling upsets. Live betting odds show win probabilities and identify the underdog in every match — predict the underdog to win for a bonus. Make tournament picks before Matchday 2 locks: choose the winner, golden boot, four semi-finalists, an underdog zebra team, and guess the total group stage goals. The bot automatically scores every match, posts live goal notifications, tracks the leaderboard, sends kickoff reminders, and posts result summaries after each game. Use /register to join, /predict to submit scores, and /picks for your tournament picks."
+  long_description: "Compete with your teammates to predict match scores throughout the entire FIFA World Cup 2026. Earn points for correct results, exact scores, and calling upsets. Live betting odds show win probabilities and identify the underdog in every match — predict the underdog to win for a bonus. Make tournament picks before they lock: choose the winner, golden boot, four semi-finalists, an underdog zebra team, and guess the total group stage goals. The bot automatically scores every match, posts live goal notifications, tracks the leaderboard, sends kickoff reminders, and posts result summaries after each game. Use /register to join, /predict to submit scores, and /picks for your tournament picks."
   background_color: "#1a472a"
 
 features:
@@ -16,7 +16,7 @@ features:
     - command: "/register"
       description: Join the World Cup prediction league
     - command: "/picks"
-      description: Set tournament picks (winner, golden boot, semis, zebra)
+      description: Set tournament picks (winner, golden boot, semis, zebra, group goals)
     - command: "/predict"
       description: Pick a match day and predict scores
     - command: "/leaderboard"
